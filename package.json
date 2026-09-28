@@ -1,0 +1,30 @@
+{
+  "name": "calibration-services-platform",
+  "version": "0.1.0",
+  "description": "Calibration Services Platform - modular monolith backend",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "demo": "tsx src/demo.ts",
+    "start": "tsx src/server.ts",
+    "lint": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "bwip-js": "^4.5.1",
+    "jszip": "^3.10.2",
+    "mysql2": "^3.24.4",
+    "pdfkit": "^0.20.2",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pdfkit": "^0.17.6",
+    "@types/qrcode": "^1.5.5",
+    "fast-check": "^3.23.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

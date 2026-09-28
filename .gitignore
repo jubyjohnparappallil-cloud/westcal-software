@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.*
+!.env.example
+_restore/
+cloudflared.exe
+
+# Local database
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Local certificates / keys
+*.pfx
+*.pem
+*.key
