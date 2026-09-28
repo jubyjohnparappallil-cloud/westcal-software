@@ -5,10 +5,13 @@ node_modules/
 _restore/
 cloudflared.exe
 
-# Local database
+# Local database and saved office data (ID photos, passwords)
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/platform.json
+data/map-protocol/
+data/*.pdf
 
 # Local certificates / keys
 *.pfx
