@@ -60,10 +60,13 @@ async function database(): Promise<Pool> {
     `CREATE TABLE IF NOT EXISTS users (
       id VARCHAR(64) PRIMARY KEY,
       identifier VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NULL,
       display_name VARCHAR(255) NOT NULL,
       status VARCHAR(20) NOT NULL,
       role_ids VARCHAR(500) NOT NULL,
-      body LONGTEXT NOT NULL
+      created_at VARCHAR(40) NULL,
+      body LONGTEXT NOT NULL,
+      KEY email (email)
     )`,
     `CREATE TABLE IF NOT EXISTS jobs (
       id VARCHAR(64) PRIMARY KEY,
@@ -121,6 +124,16 @@ async function database(): Promise<Pool> {
     )`,
   ];
   for (const sql of tables) await next.query(sql);
+  const upgrades = [
+    "ALTER TABLE users ADD COLUMN email VARCHAR(255) NULL AFTER identifier",
+    "ALTER TABLE users ADD COLUMN created_at VARCHAR(40) NULL AFTER role_ids",
+    "ALTER TABLE users ADD KEY email (email)",
+  ];
+  for (const sql of upgrades) {
+    await next.query(sql).catch((err: { code?: string }) => {
+      if (err.code !== "ER_DUP_FIELDNAME" && err.code !== "ER_DUP_KEYNAME") throw err;
+    });
+  }
   pool = next;
   return pool;
 }
@@ -154,7 +167,7 @@ async function readDatabase(): Promise<SavedState | null> {
     version: 1,
     savedAt: String(savedRows[0].value),
     users: users.map((row) => JSON.parse(String(row.body))),
-    userPermissions: userPermissions as SavedState["userPermissions"],
+    userPermissions: userPermissions as unknown as SavedState["userPermissions"],
     extraCourses: courses.map((row) => ({
       name: String(row.name),
       description: row.description == null ? undefined : String(row.description),
@@ -187,8 +200,17 @@ async function writeDatabase(payload: SavedState): Promise<void> {
     await conn.query("DELETE FROM meta");
     for (const user of payload.users ?? []) {
       await conn.query(
-        "INSERT INTO users (id, identifier, display_name, status, role_ids, body) VALUES (?, ?, ?, ?, ?, ?)",
-        [user.id, user.identifier, user.displayName, user.status, (user.roleIds ?? []).join(", "), JSON.stringify(user)]
+        "INSERT INTO users (id, identifier, email, display_name, status, role_ids, created_at, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+          user.id,
+          user.identifier,
+          user.email || null,
+          user.displayName,
+          user.status,
+          (user.roleIds ?? []).join(", "),
+          user.createdAt ? new Date(user.createdAt).toISOString() : null,
+          JSON.stringify(user),
+        ]
       );
     }
     for (const job of training?.jobs ?? []) {
@@ -282,6 +304,10 @@ export async function savePlatformState(platform: Platform): Promise<void> {
       .filter((c) => !SEED_COURSES.includes(c.name))
       .map((c) => ({ name: c.name, description: c.description })),
   };
-  await writeDatabase(payload);
+  try {
+    await writeDatabase(payload);
+  } catch (err) {
+    console.error("Could not save MySQL; the file copy was still written.", err);
+  }
   await writeFile(DATA_FILE, JSON.stringify(payload), "utf8");
 }

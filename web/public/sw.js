@@ -5,8 +5,8 @@
  * weak site connection. API calls are always network-first and are never served
  * stale, because job and attendance data must not be read from cache.
  */
-const SHELL_CACHE = "westcal-field-shell-v23";
-const SHELL_ASSETS = ["/m", "/logo.jpg", "/m/manifest.webmanifest"];
+const SHELL_CACHE = "westcal-field-shell-v26";
+const SHELL_ASSETS = ["/app/m", "/app/logo.jpg", "/app/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -38,6 +38,6 @@ self.addEventListener("fetch", (event) => {
         caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
         return res;
       })
-      .catch(() => caches.match(request).then((hit) => hit || caches.match("/m")))
+      .catch(() => caches.match(request).then((hit) => hit || caches.match("/app/m")))
   );
 });

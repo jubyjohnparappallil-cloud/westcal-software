@@ -6,7 +6,19 @@
  * and communicate only through registered interfaces (AC 13.4).
  */
 
-export type PermissionAction = "create" | "read" | "edit" | "delete";
+export type PermissionAction =
+  | "create"
+  | "read"
+  | "edit"
+  | "delete"
+  | "assign"
+  | "cancel"
+  | "attendance"
+  | "add_attendees"
+  | "edit_issued"
+  | "documents"
+  | "monitor"
+  | "custom";
 
 export interface PermissionDescriptor {
   module: string;

@@ -89,7 +89,7 @@ function westcalHeadHtml(logoSrc: string): string {
 }
 
 export function attendancePublicHtml(job: TrainingJob, publicUrl: string): string {
-  const closed = job.status === "Approved" || job.status === "Cancelled";
+  const closed = job.status === "Approved" || job.status === "Issued" || job.status === "Cancelled";
   const rows = job.attendees.map((a, i) => traineeRow(job, a, i, !closed)).join("");
   const s = sheetView(job);
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

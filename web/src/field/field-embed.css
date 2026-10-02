@@ -1,0 +1,615 @@
+/* Generated from field.css by recovery/scope_field_css.py — do not edit by hand. */
+.field-embed { font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ink); }
+.field-embed {
+  --brand: #0b4f9c;
+  --brand-dark: #083a74;
+  --ink: #12203a;
+  --muted: #5d6b82;
+  --line: #e2e8f0;
+  --bg: #f5f7fa;
+  --card: #fff;
+  --ok: #0f8a4a;
+  --warn: #b4520a;
+  --err: #c62828;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+.field-embed :focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+.field-embed .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.field-embed .appbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--brand);
+  color: #fff;
+  padding: calc(var(--safe-t) + 12px) 16px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.field-embed .appbar h1 {
+  font-size: 17px;
+  margin: 0;
+  flex: 1;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.field-embed .appbar .sub {
+  display: block;
+  font-size: 12px;
+  opacity: 0.85;
+  font-weight: 400;
+}
+.field-embed .iconbtn {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: #ffffff29;
+  color: #fff;
+  border-radius: 12px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.field-embed .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #e53935;
+  color: #fff;
+  border-radius: 999px;
+  min-width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+.field-embed .badge-wrap {
+  position: relative;
+}
+.field-embed .card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.field-embed .card h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+.field-embed .muted {
+  color: var(--muted);
+  font-size: 14px;
+}
+.field-embed .sect {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1d4ed8;
+  margin: 20px 0 10px;
+}
+.field-embed .row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.field-embed .grow {
+  flex: 1;
+  min-width: 0;
+}
+.field-embed .empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--muted);
+}
+.field-embed .empty .big {
+  font-size: 40px;
+  display: block;
+  margin-bottom: 10px;
+}
+.field-embed .job-block {
+  background: #f4f7fb;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.field-embed .job-block h3 {
+  margin: 0 0 14px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #1d4ed8;
+}
+.field-embed .fact {
+  margin: 0 0 14px;
+}
+.field-embed .fact:last-child {
+  margin-bottom: 0;
+}
+.field-embed .fact .fl {
+  margin-top: 0;
+}
+.field-embed .fact .val {
+  background: #fff;
+  border: 1.5px solid #d7dee8;
+  border-radius: 12px;
+  padding: 13px 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+  min-height: 50px;
+}
+.field-embed .job {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--brand);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  font: inherit;
+  color: inherit;
+}
+.field-embed .job:active {
+  background: #eef3fa;
+}
+.field-embed .job .no {
+  font-weight: 700;
+  font-size: 15px;
+}
+.field-embed .job .cust {
+  margin: 3px 0;
+}
+.field-embed .job .meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+.field-embed .chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #eaeff6;
+  color: var(--brand-dark);
+}
+.field-embed .chip.Assigned {
+  background: #e7f0fd;
+  color: #12509b;
+}
+.field-embed .chip.InProgress {
+  background: #fff3e0;
+  color: var(--warn);
+}
+.field-embed .chip.Submitted {
+  background: #ede7f6;
+  color: #5330a8;
+}
+.field-embed .chip.Approved {
+  background: #e6f5ec;
+  color: var(--ok);
+}
+.field-embed .chip.Rejected, .field-embed .chip.Cancelled {
+  background: #fdecec;
+  color: var(--err);
+}
+.field-embed label.fl {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 14px 0 7px;
+}
+.field-embed input, .field-embed select, .field-embed textarea {
+  width: 100%;
+  font: 16px/1.4 inherit;
+  font-family: inherit;
+  color: var(--ink);
+  background: #fff;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  padding: 13px 14px;
+  min-height: 50px;
+}
+.field-embed .course-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.field-embed .course-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  font-weight: 600;
+  font-size: 15px;
+}
+.field-embed .course-pick input {
+  width: auto;
+  min-height: 22px;
+  flex-shrink: 0;
+}
+.field-embed textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+.field-embed .btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 600;
+  font-size: 16px;
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.field-embed .btn:active {
+  background: var(--brand-dark);
+}
+.field-embed .btn[disabled] {
+  opacity: 0.5;
+}
+.field-embed .btn.sec {
+  background: #eaeff6;
+  color: var(--brand-dark);
+}
+.field-embed .btn.ok {
+  background: var(--ok);
+}
+.field-embed .btn.dark {
+  background: #0f172a;
+}
+.field-embed .btn.ghost {
+  background: transparent;
+  color: var(--brand);
+  border: 1.5px solid var(--line);
+}
+.field-embed .btn + .btn {
+  margin-top: 10px;
+}
+.field-embed .err {
+  color: var(--err);
+  font-size: 14px;
+  margin-top: 10px;
+}
+.field-embed .okmsg {
+  color: var(--ok);
+  font-size: 14px;
+  margin-top: 10px;
+}
+.field-embed .capture {
+  border: 2px dashed #b9c6d8;
+  border-radius: 14px;
+  padding: 26px 16px;
+  text-align: center;
+  background: #fbfcfe;
+}
+.field-embed .capture.dragover, .field-embed .shots.dragover, .field-embed .sheet tr.dragover td {
+  border-color: var(--brand, #2563eb);
+  background: #eaf1ff;
+}
+.field-embed .shots.dragover {
+  outline: 2px dashed var(--brand, #2563eb);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+.field-embed .drop-hint {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.field-embed .capture .big {
+  font-size: 38px;
+  display: block;
+  margin-bottom: 8px;
+}
+.field-embed .shots {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  align-items: flex-start;
+}
+.field-embed .shots figure {
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+.field-embed .shots img {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: block;
+  background: #fff;
+}
+.field-embed .idshot img {
+  width: 100%;
+  max-width: 230px;
+}
+.field-embed .portrait img {
+  width: 96px;
+  height: 120px;
+  object-fit: cover;
+}
+.field-embed .scanning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--brand-dark);
+  margin-top: 12px;
+}
+.field-embed .spin {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid #cfdcec;
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: sp 0.8s linear infinite;
+  flex: none;
+}
+@keyframes sp {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .field-embed .spin {
+    animation: none;
+  }
+}
+.field-embed .sigwrap {
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+.field-embed canvas.sig {
+  display: block;
+  width: 100%;
+  height: 170px;
+  touch-action: none;
+}
+.field-embed .sighint {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 6px;
+  border-top: 1px dashed var(--line);
+}
+.field-embed .att {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.field-embed .att:last-child {
+  border-bottom: 0;
+}
+.field-embed .att .nm {
+  font-weight: 600;
+}
+.field-embed .att .dt {
+  font-size: 13px;
+  color: var(--muted);
+}
+.field-embed img.sg {
+  width: 180px;
+  height: 180px;
+  object-fit: contain;
+  flex: none;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.field-embed .checkline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  margin: 12px 0;
+}
+.field-embed .checkline input {
+  width: auto;
+  min-height: 22px;
+}
+.field-embed .sheetwrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-top: 10px;
+}
+.field-embed .sheet {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+}
+.field-embed .sheet th, .field-embed .sheet td {
+  border: 1px solid var(--line);
+  padding: 10px 8px;
+  font-size: 13px;
+  vertical-align: middle;
+}
+.field-embed .sheet th {
+  background: #f4f7fb;
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.field-embed .sheet input {
+  width: 100%;
+  min-height: 44px;
+  margin: 4px 0;
+}
+.field-embed .sheet td.sig img {
+  height: 28px;
+  max-width: 70px;
+}
+.field-embed canvas.rowsig {
+  width: 140px;
+  height: 64px;
+  border: 1px dashed #8aa0bc;
+  background: #fafafa;
+  touch-action: none;
+  display: block;
+}
+.field-embed .mini {
+  font-size: 12px;
+  color: var(--muted);
+}
+.field-embed .attacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.field-embed .attacts .btn {
+  width: auto;
+  min-height: 40px;
+  padding: 8px 10px;
+  font-size: 13px;
+  margin: 0;
+}
+.field-embed .wc-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.field-embed .wc-ct {
+  font: 700 12px/1.4 "Times New Roman", Times, serif;
+  color: #151515;
+}
+.field-embed .wc-bar {
+  background: #4d83bc;
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 8px 10px;
+  margin: 10px -16px 12px;
+  letter-spacing: 0.2px;
+}
+.field-embed nav.tabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid var(--line);
+  padding-bottom: var(--safe-b);
+}
+.field-embed nav.tabs button {
+  flex: 1;
+  min-height: 60px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.field-embed nav.tabs button .ic {
+  font-size: 21px;
+  line-height: 1;
+}
+.field-embed nav.tabs button[aria-current="page"] {
+  color: var(--brand);
+}
+.field-embed .jobtabs {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.field-embed .jobtabs button {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+  padding: 11px 6px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+.field-embed .jobtabs button.on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+.field-embed .signin {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 38px 22px calc(30px + var(--safe-b));
+}
+.field-embed .signin img {
+  height: 56px;
+  display: block;
+  margin: 0 auto 18px;
+}
+.field-embed .signin h1 {
+  font-size: 22px;
+  text-align: center;
+  margin: 0 0 4px;
+}
+.field-embed .signin p.s {
+  text-align: center;
+  color: var(--muted);
+  margin: 0 0 26px;
+  font-size: 14px;
+}
+.field-embed .toast {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(76px + var(--safe-b));
+  z-index: 40;
+  background: #12203a;
+  color: #fff;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+}

@@ -160,7 +160,7 @@ function pick(value: string | undefined, fallback: string): string {
 export function mappingProtocolValues(job: TrainingJob): Record<string, string> {
   const temps = splitRange(job.mappingRange);
   const asset = job.assetName || job.lineItems?.[0]?.description || job.mappingType || "";
-  const dimension = job.lineItems?.map((item) => item.remarks).filter(Boolean).join("; ") || "";
+  const dimension = pick(job.assetDimension, job.lineItems?.map((item) => item.remarks).filter(Boolean).join("; ") || "");
   const engineer = pick(job.protocolEngineerName, job.assigneeName || job.trainerName || "");
   const designation = pick(job.engineerDesignation, job.assigneeRole || "Site Engineer");
   const prepared = formatDate(pick(job.protocolPreparedDate, new Date().toISOString().slice(0, 10)));
@@ -175,7 +175,7 @@ export function mappingProtocolValues(job: TrainingJob): Record<string, string> 
   const maxHum = pick(job.maxHumRange, "");
   const setPoint = pick(job.assetSetPoint, temps.mid);
   const company = pick(job.protocolCompanyName, job.customerName || "");
-  const head = job.handedOverTo || engineer;
+  const head = pick(job.mappingHeadName, job.handedOverTo || engineer);
   const temperature = pick(job.mappingRange, minTemp && maxTemp ? `${minTemp} to ${maxTemp}` : "");
   return {
     customer_name: job.customerName || "",
@@ -196,12 +196,12 @@ export function mappingProtocolValues(job: TrainingJob): Record<string, string> 
     designation_p1: pick(job.protocolDesignationP1, ""),
     person_2: pick(job.protocolPerson2, ""),
     designation_p2: pick(job.protocolDesignationP2, ""),
-    person_3: job.handedOverTo || "",
-    designation_p3: job.handedOverTo ? "Coordinator" : "",
+    person_3: pick(job.protocolPerson3, job.handedOverTo || ""),
+    designation_p3: pick(job.protocolDesignationP3, job.handedOverTo ? "Coordinator" : ""),
     "westcal_mapping head_name": head,
     "mapping head_name": head,
-    results_added_date: "",
-    "data added date": prepared,
+    results_added_date: formatDate(job.resultsAddedDate),
+    "data added date": formatDate(pick(job.dataAddedDate, job.protocolPreparedDate || new Date().toISOString().slice(0, 10))),
     season_year: job.seasonYear || year,
     "no.of days to be mapped": days,
     "starting date_ending date": start && end ? `${start} to ${end}` : start,
@@ -214,7 +214,10 @@ export function mappingProtocolValues(job: TrainingJob): Record<string, string> 
     "test starting date": start,
     "test start time": job.trainingTime || "",
     "test ending date": end,
-    "test end time": job.trainingTime || "",
+    "test end time": job.testEndTime || job.trainingTime || "",
+    logger_product: pick(job.loggerProductName, "Tempnix"),
+    logger_product_upper: pick(job.loggerProductName, "Tempnix").toUpperCase(),
+    software_name: pick(job.softwareProductName, "Tempnix software"),
   };
 }
 
@@ -262,6 +265,15 @@ function setBlockText(block: string, value: string): string {
   });
 }
 
+function isDataRow(row: string): boolean {
+  return /^DL-/i.test(blockText(splitByTag(row, "w:tc")[0] || "").trim());
+}
+
+function leadingHeaderRows(rows: string[]): string[] {
+  const firstData = rows.findIndex(isDataRow);
+  return firstData < 0 ? rows : rows.slice(0, firstData);
+}
+
 function applyLoggerLocations(xml: string, rows: TrainingJob["loggerLocations"]): string {
   if (!rows?.length) return xml;
   const tables = splitByTag(xml, "w:tbl");
@@ -275,7 +287,7 @@ function applyLoggerLocations(xml: string, rows: TrainingJob["loggerLocations"])
   });
   if (!table) return xml;
   const allRows = splitByTag(table, "w:tr");
-  const headerRows = allRows.filter((row) => !/^DL-/i.test(blockText(splitByTag(row, "w:tc")[0] || "").trim()));
+  const headerRows = leadingHeaderRows(allRows);
   const sample = allRows.find((row) => /^DL-/i.test(blockText(splitByTag(row, "w:tc")[0] || "").trim()));
   if (!sample) return xml;
   const built = rows.map((row) => {
@@ -301,6 +313,85 @@ function applyLoggerLocations(xml: string, rows: TrainingJob["loggerLocations"])
   return xml.slice(0, at) + replaced + xml.slice(at + table.length);
 }
 
+function rewriteDataRows(table: string, valuesFor: (sample: string) => string[][]): string {
+  const allRows = splitByTag(table, "w:tr");
+  const sample = allRows.find((row) => /^DL-/i.test(blockText(splitByTag(row, "w:tc")[0] || "").trim()));
+  if (!sample) return table;
+  const headerRows = leadingHeaderRows(allRows);
+  const built = valuesFor(sample).map((values) => fillSampleRow(sample, values));
+  const first = allRows[0];
+  const last = allRows[allRows.length - 1];
+  const start = table.indexOf(first);
+  const end = table.lastIndexOf(last) + last.length;
+  return table.slice(0, start) + [...headerRows, ...built].join("") + table.slice(end);
+}
+
+function uniqueParagraphIds(xml: string): string {
+  let n = 1;
+  const next = () => (n++).toString(16).toUpperCase().padStart(8, "0");
+  return xml
+    .replace(/w14:paraId="[^"]+"/g, () => `w14:paraId="${next()}"`)
+    .replace(/w14:textId="[^"]+"/g, () => `w14:textId="${next()}"`);
+}
+
+function setCellValue(cell: string, value: string): string {
+  if (!cell.includes("<w:checkBox>")) return setBlockText(cell, value);
+  const on = /^(1|yes|true|x|checked)$/i.test(value.trim()) ? "1" : "0";
+  return cell
+    .replace(/<w:checked w:val="[01]"\/>/g, `<w:checked w:val="${on}"/>`)
+    .replace(/<w:default w:val="[01]"\/>/g, `<w:default w:val="${on}"/>`);
+}
+
+function fillSampleRow(sample: string, values: string[]): string {
+  const cells = splitByTag(sample, "w:tc");
+  let cursor = 0;
+  let next = "";
+  cells.forEach((cell, index) => {
+    const at = sample.indexOf(cell, cursor);
+    next += sample.slice(cursor, at);
+    next += index < values.length ? setCellValue(cell, values[index] || "") : cell;
+    cursor = at + cell.length;
+  });
+  return next + sample.slice(cursor);
+}
+
+function applyNamedRows(
+  xml: string,
+  marker: RegExp,
+  rows: string[][],
+): string {
+  if (!rows.length) return xml;
+  const tables = splitByTag(xml, "w:tbl");
+  const table = tables.find((item) => marker.test(blockText(item).slice(0, 2500)));
+  if (!table) return xml;
+  const replaced = rewriteDataRows(table, () => rows);
+  const at = xml.indexOf(table);
+  if (at < 0) return xml;
+  return xml.slice(0, at) + replaced + xml.slice(at + table.length);
+}
+
+function applyChangeRows(xml: string, rows: TrainingJob["protocolChanges"]): string {
+  if (!rows?.length) return xml;
+  const tables = splitByTag(xml, "w:tbl");
+  const table = tables.find((item) => {
+    const header = blockText(splitByTag(item, "w:tr")[0] || "");
+    return /Change Summary/i.test(header) && /Approved/i.test(header);
+  });
+  if (!table) return xml;
+  const allRows = splitByTag(table, "w:tr");
+  const sample = allRows[1];
+  if (!sample) return xml;
+  const built = rows.map((row) => fillSampleRow(sample, [row.date, row.summary, row.reason, row.approved]));
+  const first = allRows[0];
+  const last = allRows[allRows.length - 1];
+  const start = table.indexOf(first);
+  const end = table.lastIndexOf(last) + last.length;
+  const replaced = table.slice(0, start) + first + built.join("") + table.slice(end);
+  const at = xml.indexOf(table);
+  if (at < 0) return xml;
+  return xml.slice(0, at) + replaced + xml.slice(at + table.length);
+}
+
 export async function buildMappingProtocol(job: TrainingJob): Promise<{ filename: string; buffer: Buffer }> {
   const zip = await JSZip.loadAsync(await readFile(TEMPLATE));
   const values = mappingProtocolValues(job);
@@ -308,7 +399,17 @@ export async function buildMappingProtocol(job: TrainingJob): Promise<{ filename
   for (const name of files) {
     let xml = await zip.file(name)!.async("string");
     xml = fillXml(xml, values);
-    if (name === "word/document.xml") xml = applyLoggerLocations(xml, job.loggerLocations);
+    if (name === "word/document.xml") {
+      xml = applyLoggerLocations(xml, job.loggerLocations);
+      xml = applyNamedRows(xml, /Min\.\s*temp/i, (job.tempResults || []).map((row) => [
+        row.loggerId, row.min, row.max, row.mean, row.pass, row.fail, row.testedBy, row.date,
+      ]));
+      xml = applyNamedRows(xml, /Min\.\s*hum/i, (job.humResults || []).map((row) => [
+        row.loggerId, row.min, row.max, row.pass, row.fail, row.testedBy, row.date,
+      ]));
+      xml = applyChangeRows(xml, job.protocolChanges);
+      xml = uniqueParagraphIds(xml);
+    }
     zip.file(name, xml);
   }
   const layout = String(job.layoutImageDataUrl || "");

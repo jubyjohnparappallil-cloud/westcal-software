@@ -117,14 +117,27 @@ export class PermissionService {
     });
   }
 
-  /** Union of permissions across all of a user's roles (AC 11.3). */
+  /** Roles that always keep their full role permissions (e.g. Super Admin). */
+  readonly fullAccessRoles = new Set<string>();
+
+  /** Grant marking a user whose permissions were set by hand. */
+  static readonly CUSTOM_MARKER = "Meta:custom";
+
+  /**
+   * Role defaults apply until the Super Admin saves a per-user permission set;
+   * from then on only the ticked permissions count (full-access roles excepted).
+   */
   getEffectivePermissions(userId: string): Set<string> {
     const out = new Set<string>();
-    for (const roleId of this.getUserRoleIds(userId)) {
-      for (const p of this.rolePerms.get(roleId) ?? []) out.add(p);
+    const own = this.userPerms.get(userId);
+    const roleIds = this.getUserRoleIds(userId);
+    const useRoles = !own?.has(PermissionService.CUSTOM_MARKER) || roleIds.some((r) => this.fullAccessRoles.has(r));
+    if (useRoles) {
+      for (const roleId of roleIds) {
+        for (const p of this.rolePerms.get(roleId) ?? []) out.add(p);
+      }
     }
-    // per-user direct grants are unioned on top of role grants
-    for (const p of this.userPerms.get(userId) ?? []) out.add(p);
+    for (const p of own ?? []) out.add(p);
     return out;
   }
 
