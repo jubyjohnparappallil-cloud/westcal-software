@@ -8,7 +8,7 @@ import "./env.js";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { createServer as createNetServer } from "node:net";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, extname, join, normalize } from "node:path";
@@ -1480,16 +1480,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   }
 }
 
-const httpsServer = createHttpsServer(
-  {
-    pfx: readFileSync(join(__dirname, "..", "data", "dev-https.pfx")),
-    passphrase: "westcal",
-  },
-  (req, res) => { void handleRequest(req, res); }
-);
+const HTTPS_PFX = join(__dirname, "..", "data", "dev-https.pfx");
 const httpServer = createServer((req, res) => { void handleRequest(req, res); });
-/** Phone cameras open https. Office PCs still use http. Same port serves both. */
-const server = createNetServer((socket) => {
+/** Phone cameras open https. Office PCs still use http. Same port serves both.
+ *  Without the pfx (cloud server behind nginx) plain http only. */
+const httpsServer = existsSync(HTTPS_PFX)
+  ? createHttpsServer(
+      { pfx: readFileSync(HTTPS_PFX), passphrase: "westcal" },
+      (req, res) => { void handleRequest(req, res); }
+    )
+  : null;
+const server = !httpsServer ? httpServer : createNetServer((socket) => {
   const remote = socket.remoteAddress ?? "";
   socket.once("data", (buffer) => {
     const secure = buffer[0] === 22;
