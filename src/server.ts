@@ -1,4 +1,4 @@
-﻿/**
+/**
  * HTTP server exposing the Westcal training workflow + a web UI.
  * Every API route (except sign-in and courses) requires a valid session token
  * and checks the caller's role permissions. This is real access control.
@@ -1470,7 +1470,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // Invoice Statistics - Super Admin monitoring
     if (method === "GET" && path === "/api/training/invoice-stats") {
       requirePerm(userId, "Invoice", "monitor");
-      sendJson(res, 200, platform.training.getInvoiceStats());
+      const stats = platform.training.getInvoiceStats();
+      const nameOf = (id?: string) => { if (!id) return id; try { return platform.users.getUser(id).displayName || id; } catch { return id; } };
+      sendJson(res, 200, { ...stats, jobs: stats.jobs.map((j) => ({ ...j, closedBy: nameOf((j as { closedBy?: string }).closedBy) })) });
       return;
     }
 

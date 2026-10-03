@@ -1693,6 +1693,7 @@ export class TrainingService {
     return {
       totalJobs: jobs.length,
       issued: issued.length,
+      approved: issued.length,
       closed: closed.length,
       pendingInvoice: issued.length,
       jobs: [...issued.map(j => ({
@@ -1702,7 +1703,7 @@ export class TrainingService {
         course: j.course,
         status: j.status,
         approvedBy: j.approvedBy,
-        issuedAt: j.issuedAt?.toISOString()
+        issuedAt: j.issuedAt ? new Date(j.issuedAt).toISOString() : undefined
       })), ...closed.map(j => ({
         id: j.id,
         jobNo: j.jobNo,
@@ -1710,7 +1711,7 @@ export class TrainingService {
         course: j.course,
         status: j.status,
         invoiceNumber: j.invoiceNumber,
-        closedAt: j.closedAt?.toISOString(),
+        closedAt: j.closedAt ? new Date(j.closedAt).toISOString() : undefined,
         closedBy: j.closedBy
       }))].slice(0, 20) // Recent 20 jobs
     };

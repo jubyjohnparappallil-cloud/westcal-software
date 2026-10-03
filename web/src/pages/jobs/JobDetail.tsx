@@ -247,8 +247,8 @@ export function JobDetail({
             <InvoiceClose jobId={j.id} onClosed={refresh} />
           )}
           {j.status === "Closed" && (
-            <div className="card" style={{ borderColor: "#c9e8d4", background: "#f5fbf7", marginTop: 14 }}>
-              <h3 style={{ color: "var(--ok)" }}>Closed</h3>
+            <div className="card" style={{ borderColor: "#f5c2c2", background: "#fef2f2", marginTop: 14 }}>
+              <h3 style={{ color: "#dc2626" }}>Closed</h3>
               <p>
                 <b>Invoice number:</b> {j.invoiceNumber || "-"}
               </p>
@@ -739,12 +739,12 @@ function InvoiceClose({ jobId, onClosed }: { jobId: string; onClosed: () => void
   }
   return (
     <>
-      <div className="sect">Add Invoice Number & Close Job</div>
-      <p className="hint">Enter the invoice number to close this job and complete the workflow.</p>
+      <div className="sect">Invoiced? Enter the invoice number</div>
+      <p className="hint">Type the invoice number from your accounts system. Saving it changes the job to Closed.</p>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8 }}>
         <input type="text" placeholder="Enter invoice number" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} style={{ flex: 1 }} />
         <button className="btn ok" onClick={close} disabled={busy}>
-          {busy ? "Closing..." : "Add Invoice & Close"}
+          {busy ? "Saving..." : "Save & close job"}
         </button>
       </div>
       <div className="err">{err}</div>
