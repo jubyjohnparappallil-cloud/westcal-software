@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../../api";
 import { useApp, usePageData } from "../../app-context";
+import { InvoiceModal } from "../../components/InvoiceModal";
 import { PageLoading } from "../../components/PageLoading";
 import { Pagination, usePaged } from "../../components/Pagination";
 import { downloads } from "../../lib/downloads";
@@ -39,6 +40,7 @@ export function Jobs() {
   const [openId, setOpenId] = useState(nav.jobId);
   const [form, setForm] = useState<{ editId?: string } | null>(null);
   const [cancelling, setCancelling] = useState<Job | null>(null);
+  const [invoicing, setInvoicing] = useState<Job | null>(null);
   const [stat, setStat] = useState("all");
   const all = newestFirst((data ?? []).filter((j) => (j.serviceType || "Training") === service));
   const dated = all.filter((j) => jobInDateRange(j, from, to) && (!time || (j.trainingTime || "").startsWith(time)));
@@ -216,6 +218,11 @@ export function Jobs() {
                             Protocol report
                           </button>
                         )}
+                        {(perms.isSuper() || perms.has("Invoice:create")) && (j.status === "Issued" || j.status === "Approved") && (
+                          <button className="btn ok sm" style={{ marginLeft: 6 }} onClick={() => setInvoicing(j)}>
+                            Invoiced
+                          </button>
+                        )}
                         {canEdit && j.status !== "Cancelled" && perms.canChangeJob(j.status) && (
                           <button className="btn sm" style={{ marginLeft: 6 }} onClick={() => openForm(j.id)}>
                             Edit
@@ -252,6 +259,16 @@ export function Jobs() {
           onClose={() => setForm(null)}
           onSaved={() => {
             setForm(null);
+            reload();
+          }}
+        />
+      )}
+      {invoicing && (
+        <InvoiceModal
+          job={invoicing}
+          onClose={() => setInvoicing(null)}
+          onSuccess={() => {
+            setInvoicing(null);
             reload();
           }}
         />

@@ -235,6 +235,10 @@ main {
   background: #e6f5ec;
   color: var(--ok);
 }
+.chip.Closed {
+  background: #dc2626;
+  color: #fff;
+}
 .chip.Rejected,
 .chip.Cancelled {
   background: #fdecec;

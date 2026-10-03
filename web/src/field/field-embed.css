@@ -212,6 +212,10 @@
   background: #e6f5ec;
   color: var(--ok);
 }
+.field-embed .chip.Closed {
+  background: #dc2626;
+  color: #fff;
+}
 .field-embed .chip.Rejected, .field-embed .chip.Cancelled {
   background: #fdecec;
   color: var(--err);

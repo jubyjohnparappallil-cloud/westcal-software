@@ -34,19 +34,19 @@ export function InvoiceModal({ job, onClose, onSuccess }: InvoiceModalProps) {
   }
 
   return (
-    <Modal title="Add Invoice & Close Job" subtitle={`${job.jobNo} · ${job.customerName}`} onClose={onClose}>
+    <Modal title="Mark job as invoiced" subtitle={`${job.jobNo} \u00b7 ${job.customerName}`} onClose={onClose}>
       <div className="job-form">
         <p className="hint">
-          Adding an invoice number will close this job and mark it as completed for accounting purposes.
+          Type the invoice number from your accounts system. Saving it changes the job to Closed.
         </p>
         
         <div className="grid">
           <div>
-            <label>Invoice Number *</label>
+            <label>Invoice number *</label>
             <input
               value={invoiceNumber}
               onChange={(e) => setInvoiceNumber(e.target.value)}
-              placeholder="INV-2024-001"
+              placeholder="Enter invoice number"
               autoFocus
             />
           </div>
@@ -54,7 +54,7 @@ export function InvoiceModal({ job, onClose, onSuccess }: InvoiceModalProps) {
 
         <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
           <button className="btn ok" onClick={handleSubmit} disabled={busy}>
-            {busy ? "Processing..." : "Add Invoice & Close"}
+            {busy ? "Saving..." : "Save & close job"}
           </button>
           <button className="btn ghost" onClick={onClose}>
             Cancel

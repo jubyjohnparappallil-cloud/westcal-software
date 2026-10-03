@@ -5,10 +5,8 @@ import { IssueModal } from "../components/IssueModal";
 import { PageLoading } from "../components/PageLoading";
 import { Paged } from "../components/Pagination";
 import { jobSearchText, matchesSearch, newestFirst } from "../lib/jobs";
-import type { Attendee, Job } from "../types";
+import type { Job } from "../types";
 import { CertJobView, type CertKind, type InnerTab } from "./certificates/CertJobView";
-
-type RequestRow = { a: Attendee; j: Job; st: string };
 
 export function Certificates() {
   const { nav, go, perms } = useApp();
@@ -18,7 +16,7 @@ export function Certificates() {
   const [search, setSearch] = useState("");
   const [issuing, setIssuing] = useState<Job | null>(null);
   const canIssue = perms.canIssueCerts();
-  const tab = canIssue ? nav.certTab : "issued";
+  const tab = !canIssue ? "issued" : nav.certTab === "requests" ? "pending" : nav.certTab;
 
   if (loading || !data) return <PageLoading />;
 
@@ -36,19 +34,6 @@ export function Certificates() {
   const pending = jobs.filter((j) => j.status === "Submitted");
   const issued = jobs.filter((j) => (j.certificates || []).length);
   const issuedCount = issued.reduce((n, j) => n + (j.certificates || []).length, 0);
-  const requests: RequestRow[] = jobs
-    .filter((j) => (j.serviceType || "Training") === "Training")
-    .flatMap((j) =>
-      (j.attendees || []).map((a: Attendee) => {
-        let st: string;
-        if (j.status === "Approved") st = "Issued";
-        else if (j.status === "Submitted") st = "Waiting for certificate";
-        else if (!a.signature || !(a.photoDataUrl || a.extraPhotoDataUrl)) st = "Trainee request";
-        else st = "Ready on job";
-        return { a, j, st };
-      }),
-    )
-    .filter((r) => r.st !== "Issued");
   const open = jobs.find((j) => j.id === openId);
 
   const tabButton = (t: string, label: string, count: number) => (
@@ -139,71 +124,6 @@ export function Certificates() {
           {jobTable(pending, "pending")}
         </>
       );
-  } else if (tab === "requests") {
-    body = (
-      <>
-        <h3>Trainee requests</h3>
-        <p className="hint">Search by name or job. Open the job only when you need to edit.</p>
-        {requests.length ? (
-          <div className="card">
-            {searchBox("Search name, phone, job, course")}
-            <Paged
-              items={requests.filter(({ a, j }) =>
-                matchesSearch(
-                  [a.name, a.idOrVisaNo, a.mobileNumber, a.company, a.course, j.jobNo, j.customerName].join(" ").toLowerCase(),
-                  search,
-                ),
-              )}
-              resetKey={search}
-            >
-              {(rows) => (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Phone</th>
-                        <th>Company</th>
-                        <th>Course</th>
-                        <th>Job</th>
-                        <th>Status</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(({ a, j, st }) => (
-                        <tr key={j.id + a.id}>
-                          <td>
-                            <b>{a.name || "-"}</b>
-                            <div className="muted">{a.idOrVisaNo || "No EID"}</div>
-                          </td>
-                          <td>{a.mobileNumber || "-"}</td>
-                          <td>{a.company || j.customerName || ""}</td>
-                          <td>{a.course || j.course || ""}</td>
-                          <td>{j.jobNo}</td>
-                          <td>
-                            <span className={"chip " + (j.status === "Submitted" ? "Submitted" : "")}>{st}</span>
-                          </td>
-                          <td>
-                            <button className="btn sm" onClick={() => openJob(j.status === "Approved" ? "issued" : "pending", j.id)}>
-                              Open job
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Paged>
-          </div>
-        ) : (
-          <div className="card">
-            <p className="muted">No trainee requests.</p>
-          </div>
-        )}
-      </>
-    );
   } else {
     body =
       open && issued.some((j) => j.id === open.id) ? (
@@ -231,7 +151,6 @@ export function Certificates() {
         <div className="subtabs">
           {tabButton("pending", "Pending", pending.length)}
           {tabButton("issued", "Issued", issuedCount)}
-          {tabButton("requests", "Trainee requests", requests.length)}
         </div>
       ) : (
         <p className="hint">Certificates appear here after the Office Coordinator issues them.</p>

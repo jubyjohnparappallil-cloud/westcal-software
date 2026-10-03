@@ -2,6 +2,7 @@ import { Fragment, useState } from "react";
 import { api } from "../../api";
 import { useApp } from "../../app-context";
 import { CertificatePreview } from "../../components/CertificatePreview";
+import { Modal } from "../../components/Modal";
 import { Pagination, usePaged } from "../../components/Pagination";
 import { downloads } from "../../lib/downloads";
 import type { Certificate, Job } from "../../types";
@@ -32,6 +33,7 @@ function CertDownloads({ j, c, compact }: { j: Job; c: Certificate; compact?: bo
 export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: () => void }) {
   const { perms } = useApp();
   const [editing, setEditing] = useState("");
+  const [viewing, setViewing] = useState<Certificate | null>(null);
   const certs: Certificate[] = j.certificates || [];
   const paged = usePaged(certs, j.id);
 
@@ -40,18 +42,25 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
   return (
     <>
       <p className="hint">
-        Each certificate has its own download. <b>Download</b> is the full certificate.
+        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate.
       </p>
-      {paged.rows.map((c) => (
-        <div key={c.id}>
-          <CertificatePreview c={c} j={j} />
-          <div className="cert-downloads">
-            <b style={{ marginRight: 6 }}>{c.certificateNo}</b>
-            <CertDownloads j={j} c={c} />
+      {viewing && (
+        <Modal
+          title={viewing.certificateNo}
+          subtitle={viewing.name}
+          width={560}
+          onClose={() => setViewing(null)}
+          actions={
+            <button className="btn dark sm" onClick={() => downloads.certificate(j.id, viewing.id, viewing.certificateNo)}>
+              Download
+            </button>
+          }
+        >
+          <div className="cert-modal">
+            <CertificatePreview c={viewing} j={j} />
           </div>
-        </div>
-      ))}
-      <div className="table-wrap">
+        </Modal>
+      )}      <div className="table-wrap">
         <table>
           <thead>
             <tr>
@@ -84,6 +93,9 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
                             {isOpen ? "Close" : "Edit"}
                           </button>
                         )}
+                        <button className="btn sec sm" onClick={() => setViewing(c)}>
+                          Preview
+                        </button>
                         <CertDownloads j={j} c={c} compact />
                       </div>
                     </td>
