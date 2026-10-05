@@ -39,7 +39,7 @@ export function Shell() {
   if (perms.canReports()) items.push(["reports", "📊", "Reports"]);
   if (perms.canViewCerts() && perms.moduleAllowed("Training")) items.push(["approvals", "📜", "Certificates"]);
   if (perms.has("Users:read") || perms.isSuper()) items.push(["users", "👥", "Add staff"]);
-  if (perms.isSuper()) items.push(["courses", "🎓", "Add course"]);
+  if (perms.canAddCourse()) items.push(["courses", "🎓", "Add course"]);
 
   function isActive(id: View) {
     if (id === "courses") return nav.view === "jobs" && nav.jobService === "Training" && nav.trainingTab === "courses";
@@ -155,7 +155,7 @@ function ViewRouter({ view }: { view: View }) {
     case "subcontract":
       return <Subcontract />;
     case "jobs":
-      if (nav.jobService === "Training" && nav.trainingTab === "courses" && perms.isSuper()) return <Courses />;
+      if (nav.jobService === "Training" && nav.trainingTab === "courses" && perms.canAddCourse()) return <Courses />;
       if (nav.jobService === "Training" && nav.trainingTab === "people" && perms.isSuper()) return <Trainers />;
       return <Jobs key={nav.jobService} />;
   }

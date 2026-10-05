@@ -346,7 +346,7 @@ function Dashboard({ jobs, go }: { jobs: Job[]; go: (t: Tab) => void }) {
         </p>
       </div>
       {stat("Active jobs", active.length, "Assigned or in progress", "jobs")}
-      {stat("Certificate requested", requested.length, "Waiting for Office Admin", "submitted", "Submitted")}
+      {stat("Certificate requested", requested.length, "Waiting for Certificate Coordinator", "submitted", "Submitted")}
       {stat("Certificates issued", issued.length, "Completed documents", "submitted", "Issued")}
       <div className="sect">What to do next</div>
       {active.length ? (

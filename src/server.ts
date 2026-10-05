@@ -82,8 +82,9 @@ function seedRolePermissions(p: Platform): void {
     ...officeTraining,
   ]);
 
-  // Office Admin: adds and assigns jobs, job forms, cancel requests, invoicing; only views certificates.
-  // Trainees, attendance sheets and issuing certificates belong to the Office Coordinator.
+  // Office Admin: adds and assigns jobs, job forms, cancel requests, invoicing.
+  // After certificates are issued, this role only watches / downloads them.
+  // Trainees, attendance and issuing belong to the Certificate Coordinator.
   p.permissions.setRolePermissions(ROLES.ADMIN_STAFF, [
     { module: "Training", action: "create" },
     { module: "Training", action: "read" },
@@ -99,7 +100,7 @@ function seedRolePermissions(p: Platform): void {
     { module: "Reports", action: "read" },
   ]);
 
-  // Office Coordinator: attendance, trainees, issues certificates
+  // Certificate Coordinator: receives trainer submissions, attendance, trainees, issues certificates
   p.permissions.setRolePermissions(ROLES.JOB_ASSISTANT, [
     { module: "Training", action: "read" },
     { module: "Training", action: "edit" },
@@ -154,7 +155,7 @@ function ensureDemoUsers(p: Platform): void {
     { identifier: "admin", displayName: "Super Admin", credential: "admin", roleIds: [ROLES.SUPER_ADMIN] },
     { identifier: "office", displayName: "Office Admin", credential: "pw", roleIds: [ROLES.ADMIN_STAFF] },
     { identifier: "sales1", displayName: "Sales Person", credential: "pw", roleIds: [ROLES.SALES] },
-    { identifier: "assistant1", displayName: "Office Coordinator", credential: "pw", roleIds: [ROLES.JOB_ASSISTANT] },
+    { identifier: "assistant1", displayName: "Certificate Coordinator", credential: "pw", roleIds: [ROLES.JOB_ASSISTANT] },
     { identifier: "frontdesk1", displayName: "Front Desk Staff", credential: "pw", roleIds: [ROLES.FRONT_DESK] },
     { identifier: "trainer1", displayName: "Trainer One", credential: "pw", roleIds: [ROLES.TRAINER] },
     { identifier: "engineer1", displayName: "Site Engineer One", credential: "pw", roleIds: [ROLES.SITE_ENGINEER] },
@@ -890,7 +891,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       throw new AuthorizationError("Certificates are handled by the office");
     }
     if (job && method !== "GET" && ["Submitted", "Approved", "Issued", "Closed"].includes(job.status) && isFieldOnly(userId)) {
-        throw new AuthorizationError("This job was sent to admin and can no longer be edited");
+        throw new AuthorizationError("This job was sent to the Certificate Coordinator and can no longer be edited");
       }
     }
 
@@ -988,9 +989,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
 
     if (method === "POST" && path === "/api/courses") {
-      if (!platform.permissions.getUserRoleIds(userId).includes(ROLES.SUPER_ADMIN)) {
-        requirePerm(userId, "Training", "create");
-      }
+      const roles = platform.permissions.getUserRoleIds(userId);
+      const mayAdd =
+        roles.includes(ROLES.SUPER_ADMIN) ||
+        roles.includes(ROLES.ADMIN_STAFF) ||
+        roles.includes(ROLES.JOB_ASSISTANT) ||
+        platform.permissions.authorize(userId, "Training", "create");
+      if (!mayAdd) throw new AuthorizationError("You do not have permission to add a course");
       const b = await readBody(req);
       sendJson(res, 201, platform.courses.add(b.name ?? "", b.description ?? ""));
       return;
@@ -1452,11 +1457,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         throw new AuthorizationError("This job is not assigned to you");
       }
       const submittedJob = platform.training.submitForApproval(submitMatch[1]);
-      // notify every admin that a job is waiting for approval
       for (const u of platform.users.listUsers()) {
         const roles = platform.permissions.getUserRoleIds(u.id);
-        if (roles.includes(ROLES.SUPER_ADMIN) || roles.includes(ROLES.ADMIN_STAFF)) {
-          platform.training.notifyUser(u.id, `Job ${submittedJob.jobNo} submitted for approval`, submittedJob.id);
+        if (roles.includes(ROLES.JOB_ASSISTANT)) {
+          platform.training.notifyUser(
+            u.id,
+            `Job ${submittedJob.jobNo} sent for certificates`,
+            submittedJob.id,
+          );
         }
       }
       sendJson(res, 200, submittedJob);

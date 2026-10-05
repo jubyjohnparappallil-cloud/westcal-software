@@ -35,9 +35,9 @@ export const PRESET: Record<string, string[]> = {
 
 export const ROLE_HELP = [
   { id: "role-super-admin", name: "Super Admin", who: "Adds people and chooses their role. Full control." },
-  { id: "role-admin-staff", name: "Office Admin", who: "Adds jobs, assigns trainers, requests cancel, adds the invoice number to close. Downloads job sheet and review form. Only views issued certificates." },
+  { id: "role-admin-staff", name: "Office Admin", who: "Adds jobs, assigns trainers, requests cancel, adds the invoice number to close. After certificates are issued, watches and downloads them. Does not issue certificates." },
   { id: "role-sales", name: "Sales", who: "Creates jobs for customers." },
-  { id: "role-job-assistant", name: "Office Coordinator", who: "Fills attendance, adds trainees, issues certificates, downloads attendance sheets, certificates and ID cards." },
+  { id: "role-job-assistant", name: "Certificate Coordinator", who: "Receives jobs sent by the trainer, fills attendance, adds trainees, and issues certificates. Office Admin watches them after issue." },
   { id: "role-front-desk", name: "Front Desk Staff", who: "Books new jobs at reception. Simple create and view." },
   { id: "role-trainer", name: "Trainer", who: "Runs training on site. Signs in on the phone at /m." },
   { id: "role-site-engineer", name: "Site Engineer", who: "Does testing, calibration and inspection on site." },

@@ -172,7 +172,7 @@ export function Certificates() {
           {tabButton("issued", "Issued", issuedCount)}
         </div>
       ) : (
-        <p className="hint">Certificates appear here after the Office Coordinator issues them.</p>
+        <p className="hint">Certificates appear here after the Certificate Coordinator issues them.</p>
       )}
       {body}
       {issuing && (

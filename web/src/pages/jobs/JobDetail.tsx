@@ -240,7 +240,7 @@ export function JobDetail({
           )}
           {perms.isFieldUser() && j.status === "In Progress" && (training ? j.attendees.length > 0 : allRecorded) && (
             <button className="btn ok" style={{ marginTop: 14 }} onClick={submitToAdmin}>
-              Submit to admin for certificates
+              Submit to Certificate Coordinator
             </button>
           )}
           {(perms.isSuper() || perms.has("Invoice:create")) && (j.status === "Issued" || j.status === "Approved") && (
@@ -681,7 +681,7 @@ function OfficeSubmit({ job, onSubmitted }: { job: Job; onSubmitted: () => void 
     if (!job.attendees.length) return setErr("Add at least one trainee first.");
     if (!verified) return setErr("Tick that you checked the attendance sheet.");
     if (!authorizedBy.trim()) return setErr("Enter who authorized the attendance sheet.");
-    if (!confirm(`Send ${job.jobNo} to admin with ${job.attendees.length} trainee(s)?`)) return;
+    if (!confirm(`Send ${job.jobNo} to the Certificate Coordinator with ${job.attendees.length} trainee(s)?`)) return;
     setBusy(true);
     try {
       await api("POST", `/api/training/${job.id}/attendance-meta`, { trainerVerified: true, authorizedBy: authorizedBy.trim() });
@@ -696,7 +696,7 @@ function OfficeSubmit({ job, onSubmitted }: { job: Job; onSubmitted: () => void 
   return (
     <div className="job-block" style={{ marginTop: 16 }}>
       <h4>Office: complete the attendance sheet</h4>
-      <p className="hint">Use this when the trainer did not fill the attendance. Add the trainees above, then send it to admin.</p>
+      <p className="hint">Use this when the trainer did not fill the attendance. Add the trainees above, then send it to the Certificate Coordinator.</p>
       <div className="grid">
         <div>
           <label>Authorized by</label>
@@ -710,7 +710,7 @@ function OfficeSubmit({ job, onSubmitted }: { job: Job; onSubmitted: () => void 
         </div>
       </div>
       <button className="btn ok" style={{ marginTop: 12 }} disabled={busy} onClick={submit}>
-        {busy ? "Sending…" : "Submit attendance to admin"}
+        {busy ? "Sending…" : "Submit attendance to Certificate Coordinator"}
       </button>
       <div className="err">{err}</div>
     </div>

@@ -18,7 +18,7 @@ export const ROLE_NAMES: Record<string, string> = {
   "role-super-admin": "Super Admin",
   "role-admin-staff": "Office Admin",
   "role-sales": "Sales",
-  "role-job-assistant": "Office Coordinator",
+  "role-job-assistant": "Certificate Coordinator",
   "role-front-desk": "Front Desk Staff",
   "role-trainer": "Trainer",
   "role-site-engineer": "Site Engineer",

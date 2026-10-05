@@ -1525,7 +1525,7 @@ export class TrainingService {
       }
       if (job.expectedTraineeCount && job.attendees.length < job.expectedTraineeCount) {
         throw new ValidationError(
-          `mark all ${job.expectedTraineeCount} trainees before sending to admin`,
+          `mark all ${job.expectedTraineeCount} trainees before sending to the Certificate Coordinator`,
           "attendees"
         );
       }

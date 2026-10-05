@@ -39,7 +39,7 @@ const ROLE_NAMES: Record<string, string> = {
   [ROLES.SUPER_ADMIN]: "Super_Admin",
   [ROLES.SALES]: "Sales_Person",
   [ROLES.ADMIN_STAFF]: "Admin_Staff",
-  [ROLES.JOB_ASSISTANT]: "Office_Coordinator",
+  [ROLES.JOB_ASSISTANT]: "Certificate_Coordinator",
   [ROLES.FRONT_DESK]: "Front_Desk_Staff",
   [ROLES.TRAINER]: "Trainer",
   [ROLES.SITE_ENGINEER]: "Site_Engineer",

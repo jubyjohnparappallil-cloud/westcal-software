@@ -24,6 +24,7 @@ export function permissions(session: Session) {
     (isSuper() || has(id + ":create") || has(id + ":read") || has(id + ":edit") || has("Training:read"));
   const canViewCerts = () => isSuper() || has("Certificates:read") || has("Certificates:edit");
   const canIssueCerts = () => isSuper() || has("Certificates:edit");
+  const canAddCourse = () => isSuper() || isAdmin() || isAssistant();
   const canDownload = () => isSuper() || has("Training:documents");
   const canAttendance = () => isSuper() || has("Training:attendance");
   const canReports = () => isSuper() || has("Reports:read");
@@ -50,6 +51,7 @@ export function permissions(session: Session) {
     canSeeService,
     canViewCerts,
     canIssueCerts,
+    canAddCourse,
     canDownload,
     canAttendance,
     canReports,

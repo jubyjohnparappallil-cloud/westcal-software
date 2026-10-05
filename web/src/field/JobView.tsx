@@ -408,7 +408,7 @@ export function Attendance({
         extraPhotoDataUrl: dataUrl,
         photoDataUrl: dataUrl,
       });
-      toast("New photo saved. Send back to admin after you verify.");
+      toast("New photo saved. Send back to the Certificate Coordinator after you verify.");
       await reload();
     } catch (e) {
       toast((e as Error).message);
@@ -457,7 +457,7 @@ export function Attendance({
       {j.status === "Rejected" && (
         <div className="card">
           <p className="err" style={{ margin: 0 }}>
-            <b>Office sent this back.</b> Edit any trainee field below, then send back to admin.
+            <b>Office sent this back.</b> Edit any trainee field below, then send back to the Certificate Coordinator.
           </p>
         </div>
       )}
@@ -738,7 +738,7 @@ export function Attendance({
       </div>
       {canSubmit && (
         <button className="btn ok" onClick={submitJob}>
-          {j.status === "Rejected" ? "Send back to admin" : "Send to admin"}
+          {j.status === "Rejected" ? "Send back to Certificate Coordinator" : "Send to Certificate Coordinator"}
         </button>
       )}
     </>

@@ -26,7 +26,7 @@ export function TrainingTabs() {
       {back}
       <div className="subtabs">
         {tab("jobs", "Jobs")}
-        {perms.isSuper() && tab("courses", "Courses")}
+        {perms.canAddCourse() && tab("courses", "Courses")}
         {perms.isSuper() && tab("people", "Trainers & Engineers")}
         {perms.canReports() && <button onClick={() => go("reports")}>Reports</button>}
         {perms.canViewCerts() && <button onClick={() => goToCertificates("pending")}>Certificates</button>}
@@ -36,7 +36,7 @@ export function TrainingTabs() {
 }
 
 export function Courses() {
-  const { setCourses } = useApp();
+  const { setCourses, perms } = useApp();
   const { loading, data, error, reload } = usePageData(async () => {
     const list = await api<Course[]>("GET", "/api/courses");
     setCourses(list);
@@ -119,7 +119,7 @@ export function Courses() {
                 <td>{typeof c == "string" ? c : c.name}</td>
                 <td>{typeof c == "string" ? "" : c.description || ""}</td>
                 <td>
-                  {typeof c != "string" && c.id && (
+                  {perms.isSuper() && typeof c != "string" && c.id && (
                     <button className="btn ghost sm" onClick={() => remove(c)}>
                       Remove
                     </button>
