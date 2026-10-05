@@ -134,7 +134,7 @@ export function Shell() {
           </div>
         )}
         <div className="page">
-          <ViewRouter view={nav.view} />
+          <ViewRouter key={`${nav.view}:${nav.jobService}:${nav.trainingTab}`} view={nav.view} />
         </div>
       </div>
     </div>

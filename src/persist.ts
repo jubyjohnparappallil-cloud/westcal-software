@@ -307,7 +307,7 @@ export async function savePlatformState(platform: Platform): Promise<void> {
   try {
     await writeDatabase(payload);
   } catch (err) {
-    console.error("Could not save MySQL; the file copy was still written.", err);
+    console.error("Could not save MySQL; writing the file copy.", err);
+    await writeFile(DATA_FILE, JSON.stringify(payload), "utf8");
   }
-  await writeFile(DATA_FILE, JSON.stringify(payload), "utf8");
 }

@@ -20,7 +20,7 @@ export function Dashboard() {
   const listed = newestFirst(listService === "All" ? all : all.filter((j) => (j.serviceType || "Training") === listService));
   const paged = usePaged(listed, listService);
 
-  if (loading || !data) return <PageLoading />;
+  if (loading || !data) return <PageLoading label="Loading dashboard…" />;
   const jobs = newestFirst(data);
 
   const bySvc = (s: string) => jobs.filter((j) => (j.serviceType || "Training") === s).length;

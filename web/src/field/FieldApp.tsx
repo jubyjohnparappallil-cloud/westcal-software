@@ -183,6 +183,7 @@ function Shell({ session, toast, onSignOut }: { session: Session; toast: (m: str
   const [jobs, setJobs] = useState<Job[]>([]);
   const [noti, setNoti] = useState<FieldNotification[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
+  const [currentJob, setCurrentJob] = useState<Job | null>(null);
   const [openSeq, setOpenSeq] = useState(0);
 
   async function refresh() {
@@ -194,6 +195,17 @@ function Shell({ session, toast, onSignOut }: { session: Session; toast: (m: str
     setNoti(n);
     return j;
   }
+
+  async function loadFullJob(id: string): Promise<Job | null> {
+    try {
+      const full = await fapi<Job>("GET", `/api/training/${id}`);
+      setCurrentJob(full);
+      return full;
+    } catch {
+      setCurrentJob(null);
+      return null;
+    }
+  }
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -202,6 +214,7 @@ function Shell({ session, toast, onSignOut }: { session: Session; toast: (m: str
   async function go(t: Tab) {
     setTab(t);
     setCurrentId(null);
+    setCurrentJob(null);
     if (t === "alerts") await fapi("POST", "/api/notifications/read", {}).catch(() => {});
     await refresh();
     if (t === "alerts") setNoti((list) => list.map((n) => ({ ...n, read: true })));
@@ -209,10 +222,16 @@ function Shell({ session, toast, onSignOut }: { session: Session; toast: (m: str
 
   async function openJob(id: string) {
     setTab("jobs");
-    const list = await fapi<Job[]>("GET", "/api/training").catch(() => [] as Job[]);
-    setJobs(list);
+    const list = await refresh();
     if (!list.some((x) => x.id === id)) {
       toast("That job is no longer assigned to you.");
+      setCurrentId(null);
+      setCurrentJob(null);
+      return;
+    }
+    const full = await loadFullJob(id);
+    if (!full) {
+      toast("Could not open that job.");
       setCurrentId(null);
       return;
     }
@@ -220,15 +239,21 @@ function Shell({ session, toast, onSignOut }: { session: Session; toast: (m: str
     setOpenSeq((n) => n + 1);
   }
 
+  async function reloadOpenJob() {
+    const list = await refresh();
+    if (currentId) await loadFullJob(currentId);
+    return list;
+  }
+
   const unread = noti.filter((n) => !n.read).length;
   const role = isTrainer(session) ? "Trainer" : isSiteEngineer(session) ? "Site Engineer" : "Field";
-  const current = currentId ? jobs.find((j) => j.id === currentId) || null : null;
+  const current = currentJob && currentJob.id === currentId ? currentJob : null;
 
   let body;
   if (tab === "dashboard") body = <Dashboard jobs={jobs} go={go} />;
   else if (tab === "jobs")
     body = current ? (
-      <JobView key={currentId + ":" + openSeq} job={current} onBack={() => setCurrentId(null)} reload={refresh} />
+      <JobView key={currentId + ":" + openSeq} job={current} onBack={() => { setCurrentId(null); setCurrentJob(null); }} reload={reloadOpenJob} />
     ) : (
       <JobList jobs={jobs} />
     );

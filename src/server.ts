@@ -21,7 +21,7 @@ import { AppError, AuthenticationError, AuthorizationError, NotFoundError, Valid
 import { parseEmiratesId } from "./modules/training/idFetch.js";
 import { RegistrationService } from "./modules/auth/registration.js";
 import { createOtpMailer, parseAllowList } from "./modules/auth/mailer.js";
-import type { TrainingCertificate, TrainingJob } from "./modules/training/training.js";
+import { TrainingService, type TrainingCertificate, type TrainingJob } from "./modules/training/training.js";
 import type { PermissionKey } from "./modules/permission/permission.js";
 import { attendancePublicHtml, sendAttendanceSheetPdf } from "./modules/training/attendanceSheet.js";
 import { sendAssignedJobSheetPdf, sendContractReviewPdf, sendWorkPermitPdf } from "./modules/training/trainingForms.js";
@@ -166,10 +166,15 @@ function ensureDemoUsers(p: Platform): void {
 
 let persistChain = Promise.resolve();
 let persistMutating = false;
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
 function schedulePersist(): void {
-  persistChain = persistChain
-    .then(() => savePlatformState(platform))
-    .catch((err) => console.error("Could not save data:", err));
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = undefined;
+    persistChain = persistChain
+      .then(() => savePlatformState(platform))
+      .catch((err) => console.error("Could not save data:", err));
+  }, 400);
 }
 
 /** Cap request bodies. ID card photos arrive as data URLs, so this is generous
@@ -1009,7 +1014,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
 
-    // Training list — anyone with Training:read
+    // Training list — anyone with Training:read. Heavy images are omitted;
+    // GET /api/training/:id returns the full job when a record is opened.
     if (method === "GET" && path === "/api/training") {
       requirePerm(userId, "Training", "read");
       let jobs = platform.training.listJobs();
@@ -1031,7 +1037,25 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           invoiceNo: undefined,
         })) as typeof jobs;
       }
-      sendJson(res, 200, jobs);
+      sendJson(res, 200, jobs.map((j) => TrainingService.summarizeJob(j)));
+      return;
+    }
+    const oneJob = path.match(/^\/api\/training\/([^/]+)$/);
+    if (method === "GET" && oneJob && oneJob[1] !== "next-job-order" && oneJob[1] !== "invoice-stats") {
+      requirePerm(userId, "Training", "read");
+      requireAssignedIfFieldUser(userId, oneJob[1]);
+      let job: TrainingJob = platform.training.getJob(oneJob[1]);
+      requireService(userId, job.serviceType);
+      if (isFieldOnly(userId)) {
+        const afterSubmit = new Set(["Approved", "Issued", "Closed"]);
+        job = {
+          ...job,
+          status: afterSubmit.has(job.status) ? "Submitted" : job.status,
+          certificates: [],
+          invoiceNo: undefined,
+        } as TrainingJob;
+      }
+      sendJson(res, 200, job);
       return;
     }
     if (method === "GET" && path === "/api/training/next-job-order") {
@@ -1512,8 +1536,10 @@ async function start(): Promise<void> {
   ensureDemoUsers(platform);
   migrateUserGrants();
   const relinked = platform.training.relinkMissingAssignees(platform.users.listUsers());
-  if (relinked) console.log(`Re-linked ${relinked} job(s) to current trainer / engineer logins.`);
-  schedulePersist();
+  if (relinked) {
+    console.log(`Re-linked ${relinked} job(s) to current trainer / engineer logins.`);
+    schedulePersist();
+  }
   if (restored) console.log(`Restored ${restored} job(s) from previous session.`);
   else console.log("No saved jobs yet. New jobs, trainees and certificates are written to disk.");
   server.listen(PORT, "0.0.0.0", () => {
@@ -1532,7 +1558,12 @@ async function start(): Promise<void> {
 }
 
 function flushAndExit(): void {
-  savePlatformState(platform)
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+  persistChain
+    .then(() => savePlatformState(platform))
     .catch((err) => console.error("Could not save data:", err))
     .finally(() => process.exit(0));
 }

@@ -39,12 +39,12 @@ export function JobDetail({
   const { perms, go, goToCertificates } = useApp();
   const canAssign = (perms.isSuper() || perms.has("Training:create") || perms.has("Training:assign")) && (!perms.isFieldUser() || perms.isAdmin());
   const { loading, data, reload } = usePageData(async () => {
-    const [jobs, assignees] = await Promise.all([
-      api<Job[]>("GET", "/api/training"),
+    const [job, assignees] = await Promise.all([
+      api<Job>("GET", `/api/training/${jobId}`).catch(() => null),
       canAssign ? api<Assignee[]>("GET", "/api/assignees").catch(() => [] as Assignee[]) : Promise.resolve([] as Assignee[]),
     ]);
-    return { job: jobs.find((j) => j.id === jobId) || null, assignees };
-  });
+    return { job, assignees };
+  }, [jobId]);
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     cardRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -54,7 +54,7 @@ export function JobDetail({
     reload();
     onChanged();
   };
-  if (loading || !data) return <PageLoading />;
+  if (loading || !data) return <PageLoading label="Loading job…" />;
   const j = data.job;
   if (!j) return null;
 

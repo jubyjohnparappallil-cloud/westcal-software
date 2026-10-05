@@ -27,16 +27,16 @@ interface MappingLoaded {
 
 export function MappingFormModal({ editId, onClose, onSaved }: { editId?: string; onClose: () => void; onSaved: () => void }) {
   const { loading, data } = usePageData<MappingLoaded>(async () => {
-    const [assignees, nextOrder, jobs] = await Promise.all([
+    const [assignees, nextOrder, editing] = await Promise.all([
       api<Assignee[]>("GET", "/api/assignees").catch(() => [] as Assignee[]),
       editId
         ? Promise.resolve("")
         : api("GET", "/api/training/next-job-order?serviceType=Mapping")
             .then((r) => r.jobOrderNo as string)
             .catch(() => ""),
-      editId ? api<Job[]>("GET", "/api/training") : Promise.resolve([] as Job[]),
+      editId ? api<Job>("GET", `/api/training/${editId}`).catch(() => null) : Promise.resolve(null),
     ]);
-    return { assignees, nextOrder, editing: jobs.find((j) => j.id === editId) || null };
+    return { assignees, nextOrder, editing };
   });
   return (
     <Modal

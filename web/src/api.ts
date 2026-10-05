@@ -1,3 +1,4 @@
+import { isJobListRequest, processJobList } from "./lib/fastList.js";
 import type { Session } from "./types";
 
 let token: string | null = null;
@@ -6,9 +7,6 @@ try {
 } catch {
   // storage blocked; start signed out
 }
-
-let trainingCache: { text: string; at: number; token: string | null } | null = null;
-const TRAINING_CACHE_MS = 60000;
 
 export function setApiToken(next: string | null): void {
   token = next;
@@ -22,7 +20,6 @@ export function setApiToken(next: string | null): void {
   } catch {
     // storage blocked (private mode); the in-memory token still works
   }
-  trainingCache = null;
 }
 
 export function getApiToken(): string | null {
@@ -34,11 +31,6 @@ export function hasValidToken(): boolean {
 }
 
 export async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
-  const cacheable = method === "GET" && path === "/api/training";
-  if (method !== "GET") trainingCache = null;
-  if (cacheable && trainingCache && trainingCache.token === token && Date.now() - trainingCache.at < TRAINING_CACHE_MS) {
-    return JSON.parse(trainingCache.text);
-  }
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = "Bearer " + token;
   const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
@@ -47,9 +39,8 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   try {
     data = JSON.parse(text);
   } catch {}
-  if (method !== "GET") trainingCache = null;
   if (!res.ok) throw new Error(data.message || "Request failed");
-  if (cacheable) trainingCache = { text, at: Date.now(), token };
+  if (isJobListRequest(method, path)) return processJobList(data) as T;
   return data;
 }
 

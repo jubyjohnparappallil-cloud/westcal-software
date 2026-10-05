@@ -154,6 +154,42 @@ describe("capturing a trainee from an ID card", () => {
     expect(att.signedAt).toBeInstanceOf(Date);
   });
 
+  it("list summaries drop photos without changing the stored job", () => {
+    const { s, job } = assignedJob();
+    s.addAttendeeFromId(job.id, {
+      name: "Haroon Ur Rasheed",
+      company: "BCC",
+      idOrVisaNo: "784-1990-1234567-1",
+      nationality: "Pakistan",
+      mobileNumber: "971566654326",
+      dateOfBirth: "1990-09-05",
+      idCardDataUrl: "data:image/jpeg;base64,AAAA",
+      photoDataUrl: "data:image/jpeg;base64,BBBB",
+      signature: "data:image/png;base64,CCCC",
+      autoFetched: true,
+    });
+    const stored = s.getJob(job.id);
+    stored.trainerSignature = "data:image/png;base64,DDDD";
+    stored.attachments.push({
+      id: "att-1",
+      type: "Invoice",
+      fileName: "invoice.pdf",
+      dataUrl: "data:application/pdf;base64,EEEE",
+      uploadedById: "eng1",
+      uploadedAt: new Date(),
+    });
+    const summary = TrainingService.summarizeJob(stored);
+    expect(summary.attendees[0].name).toBe("Haroon Ur Rasheed");
+    expect(summary.attendees[0].photoDataUrl).toBeUndefined();
+    expect(summary.attendees[0].idCardDataUrl).toBeUndefined();
+    expect(summary.attendees[0].signature).toBeUndefined();
+    expect(summary.trainerSignature).toBeUndefined();
+    expect(summary.attachments[0].fileName).toBe("invoice.pdf");
+    expect(summary.attachments[0].dataUrl).toBe("");
+    expect(stored.attendees[0].photoDataUrl).toBe("data:image/jpeg;base64,BBBB");
+    expect(stored.trainerSignature).toBe("data:image/png;base64,DDDD");
+  });
+
   it("rejects a date of birth that is not yyyy-mm-dd", () => {
     const { s, job } = assignedJob();
     expect(() =>

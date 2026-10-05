@@ -12,13 +12,17 @@ export function Certificates() {
   const { nav, go, perms } = useApp();
   const { loading, data, reload } = usePageData(() => api<Job[]>("GET", "/api/training").catch(() => [] as Job[]));
   const [openId, setOpenId] = useState("");
+  const { loading: opening, data: openFull, reload: reloadOpen } = usePageData(
+    () => (openId ? api<Job>("GET", `/api/training/${openId}`) : Promise.resolve(null)),
+    [openId],
+  );
   const [inner, setInner] = useState<InnerTab>("docs");
   const [search, setSearch] = useState("");
   const [issuing, setIssuing] = useState<Job | null>(null);
   const canIssue = perms.canIssueCerts();
   const tab = !canIssue ? "issued" : nav.certTab === "requests" ? "pending" : nav.certTab;
 
-  if (loading || !data) return <PageLoading />;
+  if (loading || !data) return <PageLoading label="Loading certificates…" />;
 
   const jobs = newestFirst(data);
   const switchTab = (t: string) => {
@@ -34,7 +38,7 @@ export function Certificates() {
   const pending = jobs.filter((j) => j.status === "Submitted");
   const issued = jobs.filter((j) => (j.certificates || []).length);
   const issuedCount = issued.reduce((n, j) => n + (j.certificates || []).length, 0);
-  const open = jobs.find((j) => j.id === openId);
+  const open = openId && opening ? undefined : openFull && openFull.id === openId ? openFull : undefined;
 
   const tabButton = (t: string, label: string, count: number) => (
     <button className={tab === t ? "on" : ""} onClick={() => switchTab(t)}>
@@ -105,7 +109,16 @@ export function Certificates() {
   }
 
   let body;
-  if (tab === "pending") {
+  if (openId && (opening || !open)) {
+    body = opening ? <PageLoading /> : (
+      <div className="card">
+        <p className="muted">Could not open that job.</p>
+        <button className="btn ghost sm" onClick={() => setOpenId("")}>
+          Back to list
+        </button>
+      </div>
+    );
+  } else if (tab === "pending") {
     body =
       open && pending.some((j) => j.id === open.id) ? (
         <CertJobView
@@ -115,7 +128,10 @@ export function Certificates() {
           setInner={setInner}
           onBack={() => setOpenId("")}
           onIssue={() => setIssuing(open)}
-          onChanged={reload}
+          onChanged={() => {
+            reload();
+            reloadOpen();
+          }}
         />
       ) : (
         <>
@@ -134,7 +150,10 @@ export function Certificates() {
           setInner={setInner}
           onBack={() => setOpenId("")}
           onIssue={() => setIssuing(open)}
-          onChanged={reload}
+          onChanged={() => {
+            reload();
+            reloadOpen();
+          }}
         />
       ) : (
         <>

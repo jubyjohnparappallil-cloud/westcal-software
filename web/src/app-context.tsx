@@ -86,13 +86,16 @@ export function AppProvider(props: { session: Session; initialCourses: Course[];
   return <Ctx.Provider value={value}>{props.children}</Ctx.Provider>;
 }
 
-/** Loads data for a page; keeps the old data visible while reloading. */
+/**
+ * Open the page first, show the loading screen, then fetch.
+ * Stale rows are cleared so the previous screen never sits there waiting.
+ */
 export function usePageData<T>(load: () => Promise<T>, deps: unknown[] = []) {
   const [state, setState] = useState<{ loading: boolean; data: T | null; error: string }>({ loading: true, data: null, error: "" });
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let live = true;
-    setState((s) => ({ ...s, loading: s.data === null, error: "" }));
+    setState({ loading: true, data: null, error: "" });
     load()
       .then((data) => live && setState({ loading: false, data, error: "" }))
       .catch((e: Error) => live && setState({ loading: false, data: null, error: e.message }));

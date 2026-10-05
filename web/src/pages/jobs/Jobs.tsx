@@ -33,7 +33,7 @@ function matchesStat(j: Job, stat: string): boolean {
 export function Jobs() {
   const { nav, perms } = useApp();
   const service = nav.jobService;
-  const { loading, data, reload } = usePageData(() => api<Job[]>("GET", "/api/training"));
+  const { loading, data, reload } = usePageData(() => api<Job[]>("GET", "/api/training"), [service]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [time, setTime] = useState("");
@@ -46,14 +46,39 @@ export function Jobs() {
   const dated = all.filter((j) => jobInDateRange(j, from, to) && (!time || (j.trainingTime || "").startsWith(time)));
   const shown = dated.filter((j) => matchesStat(j, stat));
   const paged = usePaged(shown, from + "|" + to + "|" + time + "|" + stat);
-  if (loading || !data) return <PageLoading />;
-
   const canCreate = perms.canCreateService(service);
   const canDelete = perms.canDeleteJob();
   const canEdit = perms.canEditJob();
   const canCancel = perms.canCancelJob();
   const training = service === "Training";
   const openForm = (editId?: string) => setForm({ editId });
+
+  if (openId) {
+    return (
+      <>
+        <TrainingTabs />
+        <p>
+          <button className="btn sec sm" onClick={() => setOpenId("")}>
+            ← Back to {service} jobs
+          </button>
+        </p>
+        <JobDetail key={openId} jobId={openId} onEdit={() => openForm(openId)} onCancel={(j) => setCancelling(j)} onChanged={reload} />
+        {form && <JobFormModal service={service} editId={form.editId} onClose={() => setForm(null)} onSaved={() => { setForm(null); reload(); }} />}
+        {cancelling && (
+          <CancelJobModal
+            job={cancelling}
+            onClose={() => setCancelling(null)}
+            onCancelled={() => {
+              setCancelling(null);
+              reload();
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (loading || !data) return <PageLoading label="Loading jobs…" />;
 
   async function remove(j: Job) {
     if (!confirm(`Delete job ${j.jobNo}? This cannot be undone.`)) return;

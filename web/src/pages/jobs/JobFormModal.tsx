@@ -55,17 +55,17 @@ function ServiceJobFormModal({ service, editId, onClose, onSaved }: FormProps) {
         throw new Error("Authentication required");
       }
       const assignees = await api<Assignee[]>("GET", "/api/assignees").catch(() => [] as Assignee[]);
-      const [courses, nextOrder, jobs] = await Promise.all([
+      const [courses, nextOrder, editing] = await Promise.all([
         api<Course[]>("GET", "/api/courses").catch(() => [] as Course[]),
         editId
           ? Promise.resolve("")
           : api("GET", `/api/training/next-job-order?serviceType=${encodeURIComponent(service)}`)
               .then((r) => r.jobOrderNo as string)
               .catch(() => ""),
-        editId ? api<Job[]>("GET", "/api/training") : Promise.resolve([] as Job[]),
+        editId ? api<Job>("GET", `/api/training/${editId}`).catch(() => null) : Promise.resolve(null),
       ]);
       setCourses(courses);
-      return { courses, assignees: assignees || [], nextOrder, editing: jobs.find((j) => j.id === editId) || null };
+      return { courses, assignees: assignees || [], nextOrder, editing };
     } catch {
       return EMPTY_LOADED;
     }

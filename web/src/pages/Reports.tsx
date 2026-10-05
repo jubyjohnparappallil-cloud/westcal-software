@@ -98,7 +98,7 @@ export function Reports() {
   const [customer, setCustomer] = useState("");
   const [trainer, setTrainer] = useState("");
   const [search, setSearch] = useState("");
-  if (loading || !data) return <PageLoading />;
+  if (loading || !data) return <PageLoading label="Loading reports…" />;
 
   const training = newestFirst(data.filter((j) => (j.serviceType || "Training") === "Training"));
   const inStatus = (j: Job, id: string) => STATUS_TABS.find(([t]) => t === id)?.[2](j) ?? true;

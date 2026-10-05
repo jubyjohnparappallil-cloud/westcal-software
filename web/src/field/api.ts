@@ -1,3 +1,4 @@
+import { isJobListRequest, processJobList } from "../lib/fastList.js";
 import type { Session } from "../types";
 
 interface FieldWindow {
@@ -34,6 +35,7 @@ export async function fapi<T = any>(method: string, path: string, body?: unknown
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || "Request failed");
+  if (isJobListRequest(method, path)) return processJobList(data) as T;
   return data;
 }
 

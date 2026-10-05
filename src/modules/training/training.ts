@@ -1005,6 +1005,43 @@ export class TrainingService {
     return [...this.jobs.values()];
   }
 
+  /**
+   * Copy used by the jobs / dashboard / reports lists: names and status stay,
+   * photos, signatures, files and QR images are left off so the live server
+   * does not send megabytes of JSON on every page load.
+   */
+  static summarizeJob(job: TrainingJob): TrainingJob {
+    return {
+      ...job,
+      trainerSignature: undefined,
+      sheetInsigniaLogoDataUrl: undefined,
+      layoutImageDataUrl: undefined,
+      contractReview: undefined,
+      workPermit: undefined,
+      tempResults: undefined,
+      humResults: undefined,
+      loggerLocations: undefined,
+      protocolChanges: undefined,
+      itemResults: [],
+      attendees: job.attendees.map((a) => ({
+        ...a,
+        photoDataUrl: undefined,
+        extraPhotoDataUrl: undefined,
+        idCardDataUrl: undefined,
+        signature: undefined,
+      })),
+      certificates: job.certificates.map((c) => ({
+        ...c,
+        qrDataUrl: "",
+        barcodeDataUrl: "",
+      })),
+      attachments: job.attachments.map((a) => ({
+        ...a,
+        dataUrl: "",
+      })),
+    };
+  }
+
   findCertificateByVerificationRef(
     verificationRef: string
   ): { job: TrainingJob; certificate: TrainingCertificate } | undefined {
