@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent } from "react";
 import { api } from "../../api";
-import { usePageData } from "../../app-context";
+import { useApp, usePageData } from "../../app-context";
 import { Modal } from "../../components/Modal";
 import { PageLoading } from "../../components/PageLoading";
 import {
@@ -56,6 +56,8 @@ export function MappingFormModal({ editId, onClose, onSaved }: { editId?: string
 }
 
 function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: MappingLoaded; onSaved: () => void }) {
+  const { perms } = useApp();
+  const allowAddRows = perms.canAddMappingRows();
   const job = loaded.editing;
   const season = splitSeason(job?.seasonYear || "");
   const [f, setF] = useState({
@@ -312,13 +314,15 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
       <div className="job-block">
         <h4>Logger location sheet</h4>
         <LayoutUpload sheets={sheets} setSheets={setSheets} />
-        <ProtocolSheetsEditor sheets={sheets} setSheets={setSheets} logger={p.logger_name || "Tempnix"} />
+        <ProtocolSheetsEditor sheets={sheets} setSheets={setSheets} logger={p.logger_name || "Tempnix"} allowAddRows={allowAddRows} />
       </div>
       <button className="btn wide" onClick={save} disabled={busy}>
         {editId ? "Save changes" : "Create Mapping job"}
       </button>
       <div className="err">{err}</div>
-      {preview && <ProtocolPreview p={p} set={setProtocol} sheets={sheets} setSheets={setSheets} onClose={() => setPreview(false)} />}
+      {preview && (
+        <ProtocolPreview p={p} set={setProtocol} sheets={sheets} setSheets={setSheets} allowAddRows={allowAddRows} onClose={() => setPreview(false)} />
+      )}
     </div>
   );
 }

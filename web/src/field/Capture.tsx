@@ -1,8 +1,8 @@
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import type { Job } from "../types";
 import { fapi } from "./api";
 import { useField } from "./FieldApp";
-import { cropPortrait, formatEidLocal, ocrEmiratesCard, shrinkImage } from "./ocr";
+import { formatEidLocal, ocrEmiratesCard, prepareIdPhoto } from "./ocr";
 import { useDropImage } from "./useDropImage";
 
 interface Fetched {
@@ -13,6 +13,7 @@ interface Fetched {
   dateOfBirth?: string;
   company?: string;
   course?: string;
+  trainingDate?: string;
   confidence?: number;
 }
 const BLANK: Fetched = { name: "", idOrVisaNo: "", nationality: "", mobileNumber: "", dateOfBirth: "", confidence: 0 };
@@ -24,104 +25,70 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [extra, setExtra] = useState<string | null>(null);
   const [fetched, setFetched] = useState<Fetched | null>(null);
-  const [fetchSeq, setFetchSeq] = useState(0);
   const [scanBox, setScanBox] = useState<ReactNode>(null);
   const [showPaste, setShowPaste] = useState(false);
 
   const fill = (f: Fetched, paste: boolean) => {
     setFetched(f);
     setShowPaste(paste);
-    setFetchSeq((n) => n + 1);
   };
-
-  useEffect(() => {
-    if (!idCard || fetched) return;
-    let cancelled = false;
-    (async () => {
-      setScanBox(
-        <div className="scanning">
-          <span className="spin" aria-hidden="true"></span>
-          <span role="status">Reading the card…</span>
-        </div>,
-      );
-      let text = "";
-      try {
-        text = await ocrEmiratesCard([idCard, extra].filter((x): x is string => !!x));
-      } catch {
-        text = "";
-      }
-      if (cancelled) return;
-      if (!text.trim()) {
-        setScanBox(
-          <p className="muted" style={{ margin: "12px 0 0" }}>
-            Could not read the card automatically. Type the details below, or paste the card text. Photograph the lower
-            ID-number strip or the back of the card.
-          </p>,
-        );
-        fill({ ...BLANK }, true);
-        return;
-      }
-      let f: Fetched;
-      try {
-        f = await fapi<Fetched>("POST", `/api/training/${job.id}/id-fetch`, { ocrText: text });
-      } catch {
-        f = { ...BLANK };
-      }
-      if (cancelled) return;
-      if (!f.idOrVisaNo) f.idOrVisaNo = formatEidLocal(text);
-      if (!f.idOrVisaNo) {
-        const typed = (prompt("ID number was not read from the card. Type the Emirates ID (784-....)") || "").trim();
-        if (typed) f.idOrVisaNo = formatEidLocal(typed) || typed;
-      }
-      const percent = Math.round((f.confidence || 0) * 100);
-      const missingId = !f.idOrVisaNo;
-      setScanBox(
-        <>
-          <p className="okmsg" role="status">
-            Read {percent}% of the fields. Check them before saving.
-          </p>
-          {missingId && (
-            <p className="muted">
-              ID number was not in the first photo. Use <b>Upload ID back (number strip)</b> — the 784 number sits in
-              the lower band and on the reverse.
-            </p>
-          )}
-        </>,
-      );
-      fill(f, missingId);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [idCard, extra, fetched, job.id]);
+  const pickGen = useRef(0);
 
   async function onIdPicked(file: File | undefined) {
     if (!file) return;
     if (!file.type.startsWith("image/")) return toast("Please choose an image.");
+    const gen = ++pickGen.current;
     try {
-      const card = await shrinkImage(file, 1800);
-      setPhoto(await cropPortrait(card));
+      const { card, portrait, ocrCard } = await prepareIdPhoto(file);
+      if (gen !== pickGen.current) return;
+      setPhoto(portrait);
       setExtra(null);
-      setFetched(null);
       setIdCard(card);
       setMode("photo");
+      setFetched({ ...BLANK });
+      setScanBox(
+        <div className="scanning">
+          <span className="spin" aria-hidden="true"></span>
+          <span role="status">Reading the card and filling the fields…</span>
+        </div>,
+      );
+      await new Promise((r) => setTimeout(r, 40));
+      if (gen !== pickGen.current) return;
+      let text = "";
+      try {
+        text = await ocrEmiratesCard([ocrCard]);
+      } catch {
+        text = "";
+      }
+      if (gen !== pickGen.current) return;
+      let f: Fetched = { ...BLANK };
+      if (text.trim()) {
+        try {
+          f = await fapi<Fetched>("POST", `/api/training/${job.id}/id-fetch`, { ocrText: text });
+        } catch {
+          f = { ...BLANK };
+        }
+      }
+      if (!f.idOrVisaNo) f.idOrVisaNo = formatEidLocal(text);
+      const percent = Math.round((f.confidence || 0) * 100);
+      setScanBox(
+        f.name || f.idOrVisaNo ? (
+          <p className="okmsg" role="status">
+            Auto-filled {percent ? percent + "% of " : ""}the fields. Check them, then add to attendance.
+          </p>
+        ) : (
+          <p className="muted" style={{ margin: "12px 0 0" }}>
+            Could not read every field. Tap Fill from ID photo, or type the missing ones.
+          </p>
+        ),
+      );
+      fill(f, false);
     } catch {
       toast("Could not read that image.");
     }
   }
 
   const { dragging, dropProps } = useDropImage((file) => onIdPicked(file));
-
-  async function onExtraPicked(file: File | undefined) {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) return toast("Please choose an image.");
-    try {
-      setExtra(await shrinkImage(file, 1800));
-      setFetched(null);
-    } catch {
-      toast("Could not read that image.");
-    }
-  }
 
   async function useSample() {
     const sample = [
@@ -150,7 +117,7 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
     setPhoto(null);
     setMode("manual");
     setScanBox(null);
-    fill({ ...BLANK }, true);
+    fill({ ...BLANK }, false);
   }
 
   return (
@@ -176,18 +143,18 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
                 </figure>
               )}
             </div>
-            <label className="btn sec" style={{ marginTop: 10 }} htmlFor="extrafile">
-              Upload ID back (number strip)
+            <label className="btn sec" style={{ marginTop: 10 }} htmlFor="idfile2">
+              Replace from gallery
             </label>
             <input
-              id="extrafile"
+              id="idfile2"
               className="sr-only"
               type="file"
               accept="image/*"
-              onChange={(e) => onExtraPicked(e.target.files?.[0])}
+              onChange={(e) => onIdPicked(e.target.files?.[0])}
             />
             <label className="btn ghost" style={{ marginTop: 8 }} htmlFor="idfile">
-              Replace ID
+              Replace ID (camera)
             </label>
             <input
               id="idfile"
@@ -197,6 +164,20 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
               capture="environment"
               onChange={(e) => onIdPicked(e.target.files?.[0])}
             />
+            <button
+              type="button"
+              className="btn ghost"
+              style={{ marginTop: 8 }}
+              onClick={() => {
+                setIdCard(null);
+                setPhoto(null);
+                setExtra(null);
+                setFetched(null);
+                setScanBox(null);
+              }}
+            >
+              Delete photos
+            </button>
           </>
         ) : (
           <>
@@ -240,11 +221,10 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
         ))}
       <div>{scanBox}</div>
       <TraineeFields
-        key={fetchSeq}
         job={job}
         fetched={fetched || {}}
         showPaste={showPaste}
-        onPasted={(f) => fill(f, true)}
+        onPasted={(f) => fill(f, false)}
         images={{ idCard, photo, extra }}
         onSaved={onSaved}
       />
@@ -268,29 +248,78 @@ function TraineeFields(props: {
     .filter(Boolean);
   const companies = [...new Set([job.customerName, ...(job.companies || [])].filter(Boolean))];
   const [v, setV] = useState({
-    name: f.name || "",
-    id: f.idOrVisaNo || "",
-    dob: f.dateOfBirth || "",
+    name: "",
+    id: "",
+    dob: "",
     trainDate: job.trainingDate || "",
     certified: (job.certificateUnder || job.customerName || "").trim(),
-    nat: f.nationality || "",
-    mob: f.mobileNumber || "",
+    nat: "",
+    mob: "",
     company: f.company || job.customerName || "",
   });
   const [ticked, setTicked] = useState<string[]>(f.course ? [f.course] : []);
   const [paste, setPaste] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  function applyCard(next: Fetched) {
+    const write = () =>
+      setV((prev) => ({
+        ...prev,
+        name: next.name || prev.name,
+        id: next.idOrVisaNo || prev.id,
+        dob: next.dateOfBirth || prev.dob,
+        nat: next.nationality || prev.nat,
+        mob: next.mobileNumber || prev.mob,
+        company: next.company || prev.company,
+        trainDate: next.trainingDate || prev.trainDate,
+      }));
+    write();
+    window.setTimeout(write, 80);
+    window.setTimeout(write, 400);
+    if (next.course && courses.includes(next.course)) {
+      setTicked((cur) => (cur.includes(next.course!) ? cur : [...cur, next.course!]));
+    }
+  }
+
+  useEffect(() => {
+    if (f.name || f.idOrVisaNo || f.nationality || f.dateOfBirth || f.company || f.trainingDate) applyCard(f);
+  }, [f.name, f.idOrVisaNo, f.nationality, f.dateOfBirth, f.mobileNumber, f.company, f.trainingDate, f.course]);
+
   const set = (k: keyof typeof v) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setV({ ...v, [k]: e.target.value });
 
-  async function parsePasted() {
-    if (!paste.trim()) return;
+  async function fillFromId() {
+    setErr("");
+    setBusy(true);
     try {
-      props.onPasted(await fapi<Fetched>("POST", `/api/training/${job.id}/id-fetch`, { ocrText: paste }));
-      toast("Filled from the pasted text.");
+      let text = paste.trim();
+      if (!text) {
+        const pics = [images.idCard, images.extra].filter((x): x is string => !!x);
+        if (!pics.length) {
+          setErr("Upload the Emirates ID first, then tap Fill from ID photo.");
+          return;
+        }
+        toast("Reading the card…");
+        text = await ocrEmiratesCard(pics);
+      }
+      if (!text.trim()) {
+        setErr("Could not read the card. Type the name and ID, or paste the card text.");
+        return;
+      }
+      const got = await fapi<Fetched>("POST", `/api/training/${job.id}/id-fetch`, { ocrText: text });
+      if (!got.idOrVisaNo) got.idOrVisaNo = formatEidLocal(text);
+      applyCard(got);
+      props.onPasted(got);
+      toast(
+        got.name || got.idOrVisaNo
+          ? "Filled from the ID. Check the name and number, then add to attendance."
+          : "Read the card but some fields are missing. Type them below.",
+      );
     } catch (e) {
       toast((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -298,8 +327,10 @@ function TraineeFields(props: {
     setErr("");
     const mob = v.mob.replace(/[\s\-+]/g, "");
     if (!v.name.trim()) return setErr("Name is required.");
-    const picked = courses.length > 1 ? ticked : [courses[0] || job.course || ""].filter(Boolean);
-    if (!picked.length) return setErr("Tick at least one training course.");
+    const picked = (courses.length > 1 ? ticked : [courses[0] || job.course || ""])
+      .map((s) => s.trim())
+      .filter((s) => s && (!courses.length || courses.includes(s)));
+    if (courses.length > 1 && !picked.length) return setErr("Tick at least one training course.");
     const trainingDate = v.trainDate.trim();
     const certifiedBy = v.certified.trim();
     if (!trainingDate) return setErr("Training date is required. It prints on the attendance sheet.");
@@ -336,37 +367,71 @@ function TraineeFields(props: {
   }
 
   return (
-    <div>
+    <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
+      {images.idCard && (
+        <button className="btn" style={{ marginTop: 12 }} disabled={busy} type="button" onClick={fillFromId}>
+          Fill fields from this photo
+        </button>
+      )}
+      <p className="mini" style={{ margin: "8px 0 0" }}>
+        If name or ID is empty, tap Fill fields from this photo.
+      </p>
       {props.showPaste && (
         <>
           <label className="fl" htmlFor="ocr">
-            Paste card text (optional)
+            Or paste card text
           </label>
           <textarea
             id="ocr"
+            name="wc-paste"
+            autoComplete="off"
             value={paste}
             placeholder={"Name: HAROON UR RASHEED\nID Number: 784-1990-1234567-1"}
             onChange={(e) => setPaste(e.target.value)}
           />
-          <button className="btn sec" style={{ marginTop: 10 }} onClick={parsePasted}>
+          <button className="btn sec" style={{ marginTop: 10 }} type="button" disabled={busy} onClick={fillFromId}>
             Fill from text
           </button>
         </>
       )}
       <label className="fl">Full name *</label>
-      <input value={v.name} autoComplete="name" onChange={set("name")} />
+      <input
+        name="wc-attendee-fullname"
+        value={v.name}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="characters"
+        spellCheck={false}
+        readOnly
+        onFocus={(e) => e.currentTarget.removeAttribute("readonly")}
+        onChange={set("name")}
+      />
       <label className="fl">Emirates ID / Visa no</label>
-      <input value={v.id} autoComplete="off" onChange={set("id")} />
+      <input
+        name="wc-attendee-eid"
+        value={v.id}
+        autoComplete="off"
+        readOnly
+        onFocus={(e) => e.currentTarget.removeAttribute("readonly")}
+        onChange={set("id")}
+      />
       <label className="fl">Date of birth</label>
-      <input type="date" value={v.dob} onChange={set("dob")} />
+      <input type="date" name="wc-attendee-dob" value={v.dob} autoComplete="off" onChange={set("dob")} />
       <label className="fl">Training date *</label>
       <input type="date" value={v.trainDate} required onChange={set("trainDate")} />
       <label className="fl">Certified to *</label>
-      <input value={v.certified} placeholder="Name printed as Certified to" onChange={set("certified")} />
+      <input value={v.certified} placeholder="Name printed as Certified to" autoComplete="off" onChange={set("certified")} />
       <label className="fl">Nationality</label>
-      <input value={v.nat} onChange={set("nat")} />
+      <input
+        name="wc-attendee-nat"
+        value={v.nat}
+        autoComplete="off"
+        readOnly
+        onFocus={(e) => e.currentTarget.removeAttribute("readonly")}
+        onChange={set("nat")}
+      />
       <label className="fl">Phone number (optional)</label>
-      <input value={v.mob} inputMode="tel" onChange={set("mob")} />
+      <input value={v.mob} inputMode="tel" autoComplete="off" onChange={set("mob")} />
       <label className="fl">Company *</label>
       {companies.length > 1 ? (
         <select value={v.company} onChange={set("company")}>
@@ -394,12 +459,12 @@ function TraineeFields(props: {
           </div>
         </>
       )}
-      <button className="btn ok" style={{ marginTop: 16 }} disabled={busy} onClick={save}>
+      <button className="btn ok" style={{ marginTop: 16 }} type="button" disabled={busy} onClick={save}>
         Add to attendance
       </button>
       <div className="err" role="alert">
         {err}
       </div>
-    </div>
+    </form>
   );
 }

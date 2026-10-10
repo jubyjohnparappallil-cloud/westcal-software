@@ -12,7 +12,7 @@ export function Trainers() {
   const [err, setErr] = useState("");
   const people = (data || []).filter((u) => u.roleIds.includes("role-trainer") || u.roleIds.includes("role-site-engineer"));
   const paged = usePaged(people);
-  if (loading) return <PageLoading />;
+  if (loading && !data) return <PageLoading />;
   if (error || !data) return <PageError message={error} onRetry={reload} />;
 
   async function create() {

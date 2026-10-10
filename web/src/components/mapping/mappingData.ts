@@ -239,6 +239,37 @@ export function emptySheetRow(kind: SheetKind, loggerId = ""): SheetRow {
   return row;
 }
 
+/** Next DL-001 style ids after the highest number already in the table. */
+export function nextDlIds(existingIds: string[], count: number): string[] {
+  let max = 0;
+  for (const id of existingIds) {
+    const m = String(id || "").match(/(\d+)\s*$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  const n = Math.min(200, Math.max(0, Math.floor(count)));
+  return Array.from({ length: n }, (_, i) => "DL-" + String(max + i + 1).padStart(3, "0"));
+}
+
+/** Add N loggers and matching temperature / humidity result rows. */
+export function addSyncedLoggerRows(sheets: Sheets, count: number): Sheets {
+  const n = Math.min(200, Math.max(1, Math.floor(Number(count) || 1)));
+  const ids = nextDlIds(
+    [
+      ...sheets.loggers.map((l) => l.loggerId),
+      ...sheets.temp.map((r) => String(r.id || "")),
+      ...sheets.hum.map((r) => String(r.id || "")),
+    ],
+    n,
+  );
+  if (!ids.length) return sheets;
+  return {
+    ...sheets,
+    loggers: [...sheets.loggers, ...ids.map((loggerId) => ({ key: nextKey(), loggerId, height: "", comments: "" }))],
+    temp: [...sheets.temp, ...ids.map((id) => emptySheetRow("temp", id))],
+    hum: [...sheets.hum, ...ids.map((id) => emptySheetRow("hum", id))],
+  };
+}
+
 function defaultLoggers(): LoggerRow[] {
   const heights = ["0.5", "2.0", "3.0"];
   const rows: LoggerRow[] = [];

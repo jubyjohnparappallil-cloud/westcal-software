@@ -60,7 +60,8 @@ export function createPlatform(clock: Clock = new SystemClock()): Platform {
   const training = new TrainingService(
     codes,
     (userId) => permissions.getUserRoleIds(userId).includes(ROLES.TRAINER),
-    (userId) => permissions.getUserRoleIds(userId).includes(ROLES.SITE_ENGINEER)
+    (userId) => permissions.getUserRoleIds(userId).includes(ROLES.SITE_ENGINEER),
+    (userId) => permissions.getUserRoleIds(userId).includes(ROLES.JOB_ASSISTANT)
   );
 
   let auth: AuthService;

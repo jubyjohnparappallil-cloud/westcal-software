@@ -19,7 +19,11 @@ export const TRAINING_PERMS: [string, string][] = [
   ["Reports:read", "Reports"],
 ];
 
-export const ALL_PERM_KEYS = [...PMODS.flatMap((m) => PACTS.map((a) => m + ":" + a)), ...TRAINING_PERMS.map(([k]) => k)];
+export const ALL_PERM_KEYS = [
+  ...PMODS.flatMap((m) => PACTS.map((a) => m + ":" + a)),
+  "Mapping:add_rows",
+  ...TRAINING_PERMS.map(([k]) => k),
+];
 
 const OFFICE_TRAINING = ["Training:cancel", "Training:attendance", "Training:add_attendees", "Reports:read"];
 

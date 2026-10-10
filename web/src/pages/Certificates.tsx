@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useApp, usePageData } from "../app-context";
 import { IssueModal } from "../components/IssueModal";
@@ -10,8 +10,11 @@ import { CertJobView, type CertKind, type InnerTab } from "./certificates/CertJo
 
 export function Certificates() {
   const { nav, go, perms } = useApp();
-  const { loading, data, reload } = usePageData(() => api<Job[]>("GET", "/api/training").catch(() => [] as Job[]));
-  const [openId, setOpenId] = useState("");
+  const { data, reload } = usePageData(() => api<Job[]>("GET", "/api/training").catch(() => [] as Job[]));
+  const [openId, setOpenId] = useState(nav.jobId || "");
+  useEffect(() => {
+    if (nav.jobId) setOpenId(nav.jobId);
+  }, [nav.jobId]);
   const { loading: opening, data: openFull, reload: reloadOpen } = usePageData(
     () => (openId ? api<Job>("GET", `/api/training/${openId}`) : Promise.resolve(null)),
     [openId],
@@ -22,7 +25,7 @@ export function Certificates() {
   const canIssue = perms.canIssueCerts();
   const tab = !canIssue ? "issued" : nav.certTab === "requests" ? "pending" : nav.certTab;
 
-  if (loading || !data) return <PageLoading label="Loading certificates…" />;
+  if (!data) return <PageLoading label="Loading certificates…" />;
 
   const jobs = newestFirst(data);
   const switchTab = (t: string) => {
@@ -38,7 +41,7 @@ export function Certificates() {
   const pending = jobs.filter((j) => j.status === "Submitted");
   const issued = jobs.filter((j) => (j.certificates || []).length);
   const issuedCount = issued.reduce((n, j) => n + (j.certificates || []).length, 0);
-  const open = openId && opening ? undefined : openFull && openFull.id === openId ? openFull : undefined;
+  const open = openFull && openFull.id === openId ? openFull : undefined;
 
   const tabButton = (t: string, label: string, count: number) => (
     <button className={tab === t ? "on" : ""} onClick={() => switchTab(t)}>
@@ -109,7 +112,7 @@ export function Certificates() {
   }
 
   let body;
-  if (openId && (opening || !open)) {
+  if (openId && !open) {
     body = opening ? <PageLoading /> : (
       <div className="card">
         <p className="muted">Could not open that job.</p>

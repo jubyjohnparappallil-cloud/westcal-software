@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../../app-context";
 import { AddTrainee } from "../../components/AddTrainee";
+import { copyPublicLink } from "../../lib/downloads";
 import type { Job } from "../../types";
 import { TrainerSheet } from "./TrainerSheet";
 
@@ -14,6 +15,17 @@ export function AttendanceTab({ job: j, onChanged }: { job: Job; onChanged: () =
 
   return (
     <>
+      <div className="job-block" style={{ marginBottom: 12 }}>
+        <p className="hint" style={{ marginTop: 0 }}>
+          Customer attendance link (whole sheet — all trainees)
+        </p>
+        <p className="muted" style={{ wordBreak: "break-all", margin: "0 0 8px" }}>
+          {location.origin + "/public/training/" + j.id}
+        </p>
+        <button type="button" className="btn ghost sm" onClick={() => copyPublicLink(j.id)}>
+          Copy customer attendance link
+        </button>
+      </div>
       {canMark && (
         <div className="dl-row" style={{ marginBottom: 10 }}>
           <button className="btn sec sm" onClick={() => setBulk(!bulk)}>

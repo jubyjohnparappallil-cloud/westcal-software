@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Attendee, Job } from "../types";
 import { apiBase, downloadBlob, fapi } from "./api";
 import { Capture } from "./Capture";
 import { chipClass, fieldDate, isTrainer, isTrainingJob, statusLabel, useField } from "./FieldApp";
-import { cropPortrait, formatEidLocal, ocrEmiratesCard, shrinkImage } from "./ocr";
+import { formatEidLocal, ocrEmiratesCard, prepareIdPhoto, shrinkImage } from "./ocr";
 import { Pad, type PadHandle } from "./Pad";
 
 type Section = "details" | "attendance" | "feedback";
@@ -21,24 +21,25 @@ interface ItemResult {
   result?: string;
   remarks?: string;
 }
-interface Fetched {
-  name?: string;
-  idOrVisaNo?: string;
-  nationality?: string;
-  dateOfBirth?: string;
+const WESTCAL_NAME = "Westcal Instrumentation and Calibration Services LLC";
+
+function displayJobNo(jobNo?: string): string {
+  return String(jobNo || "").replace(/^WC-/i, "");
 }
 
-const WESTCAL_NAME = "Westcal Instrumentation and Calibration Services LLC";
+/** Open the saved Maps link. A plain place name still opens Google Maps. */
+function directionHref(direction?: string, address?: string): string {
+  const raw = String(direction || "").trim();
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^(maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.|www\.google\.|google\.)/i.test(raw)) return "https://" + raw;
+  const q = raw || String(address || "").trim();
+  return q ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q) : "";
+}
 
 function sheetView(j: Job) {
   const logoSrc = j.sheetInsigniaLogoDataUrl || "/logo.jpg";
   const jobLabel = (j.sheetJobLabel || "").trim() || "WESTCAL Job";
-  const jobNo =
-    (j.sheetJobNo || "").trim() ||
-    String(j.jobOrderNo || j.jobNo || "").replace(/\D/g, "") ||
-    j.jobOrderNo ||
-    j.jobNo ||
-    "";
+  const jobNo = (j.sheetJobNo || "").trim() || displayJobNo(j.jobNo) || j.jobOrderNo || "";
   const courseTitle = (j.sheetCourseTitle || "").trim() || j.course || "Training";
   const invoiced = (j.sheetCompany || "").trim() || j.customerName || "";
   const certifiedBy = (j.certificateUnder || "").trim() || invoiced;
@@ -161,7 +162,7 @@ function Details({ j, canWork, reload }: { j: Job; canWork: boolean; reload: () 
         <h3>Job details</h3>
         <div className="row" style={{ marginBottom: 12 }}>
           <h2 className="grow" style={{ margin: 0 }}>
-            {j.jobNo}
+            {displayJobNo(j.jobNo)}
           </h2>
           <span className={chipClass(j.status)}>{statusLabel(j.status)}</span>
         </div>
@@ -173,15 +174,15 @@ function Details({ j, canWork, reload }: { j: Job; canWork: boolean; reload: () 
         {fact("Contact", j.contactNameNumber || "-")}
         {fact("Job order no", j.jobOrderNo || "-")}
         {j.clientRequirements && fact("Client requirements", j.clientRequirements)}
-        {j.address && (
+        {directionHref(j.directionUrl, j.address) && (
           <a
             className="btn sec"
             style={{ marginTop: 6 }}
-            href={`https://maps.google.com/?q=${encodeURIComponent(j.address)}`}
+            href={directionHref(j.directionUrl, j.address)}
             target="_blank"
             rel="noopener noreferrer"
           >
-            Directions to site
+            Direction
           </a>
         )}
         {j.status === "Cancelled" && (
@@ -201,7 +202,7 @@ function Details({ j, canWork, reload }: { j: Job; canWork: boolean; reload: () 
           </p>
           <label className="fl">Contact person / number</label>
           <div className="val">{info.contact || "Not specified"}</div>
-          <label className="fl">Prepared by</label>
+          <label className="fl">CR prepared by</label>
           <div className="val">{info.prepared}</div>
           <label className="fl">Training method</label>
           <div className="val">{info.method}</div>
@@ -351,6 +352,14 @@ export function Attendance({
   const s = sheetView(j);
   const [captureKey, setCaptureKey] = useState(0);
   const [rowEdit, setRowEdit] = useState<{ id: string; focusEid: boolean; eid?: string } | null>(null);
+  const [companyDraft, setCompanyDraft] = useState(s.invoiced);
+  const [certifiedDraft, setCertifiedDraft] = useState(s.certifiedBy);
+  const [personCompany, setPersonCompany] = useState<Record<string, string>>({});
+  const [sigPreview, setSigPreview] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setCompanyDraft(s.invoiced);
+    setCertifiedDraft(s.certifiedBy);
+  }, [j.id, s.invoiced, s.certifiedBy]);
   const [dropRow, setDropRow] = useState<string | null>(null);
   const [authorized, setAuthorized] = useState(
     j.authorizedBy || j.assigneeName || j.trainerName || session.displayName || "",
@@ -358,6 +367,12 @@ export function Attendance({
   const [verified, setVerified] = useState(!!j.trainerVerified);
   const trainerSig = useRef<string | null>(j.trainerSignature || null);
   const trainerPad = useRef<PadHandle>(null);
+  const sigFile = useRef<HTMLInputElement>(null);
+  const [shownSig, setShownSig] = useState(j.trainerSignature || "");
+  useEffect(() => {
+    setShownSig(j.trainerSignature || "");
+    trainerSig.current = j.trainerSignature || null;
+  }, [j.id, j.trainerSignature]);
   const rowPads = useRef(new Map<string, PadHandle | null>());
   const [verifyErr, setVerifyErr] = useState("");
   const publicUrl = (apiBase() || location.origin) + "/public/training/" + j.id;
@@ -384,6 +399,11 @@ export function Attendance({
   }
 
   async function submitJob() {
+    if (showAttendance && !verified) {
+      setVerifyErr("Tick I verified this attendance sheet, then send to the Certificate Coordinator.");
+      toast("Verify the attendance sheet first.");
+      return;
+    }
     if (
       !confirm(
         j.status === "Rejected"
@@ -393,6 +413,11 @@ export function Attendance({
     )
       return;
     try {
+      if (showAttendance) {
+        const payload: Record<string, unknown> = { trainerVerified: true, authorizedBy: authorized };
+        if (trainerSig.current || j.trainerSignature) payload.trainerSignature = trainerSig.current || j.trainerSignature;
+        await fapi("POST", `/api/training/${j.id}/attendance-meta`, payload);
+      }
       await fapi("POST", `/api/training/${j.id}/submit`, {});
       toast("Submitted to the office.");
       await openJob(j.id);
@@ -403,12 +428,9 @@ export function Attendance({
 
   async function replacePhoto(a: Attendee, file: File) {
     try {
-      const dataUrl = await shrinkImage(file, 1400);
-      await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, {
-        extraPhotoDataUrl: dataUrl,
-        photoDataUrl: dataUrl,
-      });
-      toast("New photo saved. Send back to the Certificate Coordinator after you verify.");
+      const dataUrl = await shrinkImage(file);
+      await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { photoDataUrl: dataUrl });
+      toast("Photo updated.");
       await reload();
     } catch (e) {
       toast((e as Error).message);
@@ -416,31 +438,97 @@ export function Attendance({
   }
 
   async function replaceId(a: Attendee, file: File) {
-    toast("Reading Emirates ID…");
     try {
-      const idCardDataUrl = await shrinkImage(file, 1800);
-      const photoDataUrl = await cropPortrait(idCardDataUrl);
-      let text = "";
-      let fetched: Fetched = {};
+      const { card, portrait, ocrCard } = await prepareIdPhoto(file);
+      let name: string | undefined;
+      let idOrVisaNo: string | undefined;
+      let nationality: string | undefined;
+      let dateOfBirth: string | undefined;
       try {
-        text = await ocrEmiratesCard([idCardDataUrl]);
-        if (text.trim()) fetched = await fapi<Fetched>("POST", `/api/training/${j.id}/id-fetch`, { ocrText: text });
+        const text = await ocrEmiratesCard([ocrCard]);
+        if (text.trim()) {
+          const fetched = await fapi<{
+            name?: string;
+            idOrVisaNo?: string;
+            nationality?: string;
+            dateOfBirth?: string;
+          }>("POST", `/api/training/${j.id}/id-fetch`, { ocrText: text });
+          name = fetched.name;
+          idOrVisaNo = fetched.idOrVisaNo || formatEidLocal(text);
+          nationality = fetched.nationality;
+          dateOfBirth = fetched.dateOfBirth;
+        }
       } catch {
-        toast("Could not auto-read the number. Type it below.");
+        /* still save the photo */
       }
-      const eid = (fetched.idOrVisaNo || formatEidLocal(text) || "").trim();
       await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, {
-        idCardDataUrl,
-        photoDataUrl,
-        name: fetched.name || undefined,
-        idOrVisaNo: eid || undefined,
-        nationality: fetched.nationality || undefined,
-        dateOfBirth: fetched.dateOfBirth || undefined,
-        autoFetched: !!eid,
+        idCardDataUrl: card,
+        photoDataUrl: portrait || card,
+        ...(name ? { name } : {}),
+        ...(idOrVisaNo ? { idOrVisaNo } : {}),
+        ...(nationality ? { nationality } : {}),
+        ...(dateOfBirth ? { dateOfBirth } : {}),
+        autoFetched: !!idOrVisaNo,
       });
-      toast(eid ? "EID saved: " + eid : "Card photo saved. Type the Emirates ID number (784-…) and tap Save update.");
+      toast(idOrVisaNo ? "Photo saved and ID filled: " + idOrVisaNo : "Photo saved. Type the ID if it is missing.");
       await reload();
-      setRowEdit({ id: a.id, focusEid: true, eid });
+      setRowEdit({ id: a.id, focusEid: !idOrVisaNo, eid: idOrVisaNo });
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  }
+
+  async function deleteTrainee(a: Attendee) {
+    if (!confirm("Remove " + a.name + " from attendance?")) return;
+    try {
+      await fapi("DELETE", `/api/training/${j.id}/attendees/${a.id}`);
+      toast("Trainee removed.");
+      if (rowEdit?.id === a.id) setRowEdit(null);
+      await reload();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  }
+
+  async function saveSheetCompany(value: string) {
+    const name = value.trim();
+    if (!name) {
+      setCompanyDraft(s.invoiced);
+      setPersonCompany({});
+      toast("Company is required.");
+      return;
+    }
+    if (name === s.invoiced) {
+      setPersonCompany({});
+      return;
+    }
+    setCompanyDraft(name);
+    setPersonCompany(Object.fromEntries(j.attendees.map((a) => [a.id, name])));
+    try {
+      await fapi("POST", `/api/training/${j.id}/attendance-meta`, { sheetCompany: name });
+      await Promise.all(
+        j.attendees.map((a) => fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { company: name })),
+      );
+      toast("Company updated on the attendance sheet.");
+      await reload();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  }
+
+  async function saveCertifiedTo(value: string) {
+    const name = value.trim();
+    if (!name) {
+      setCertifiedDraft(s.certifiedBy);
+      toast("Certified to is required.");
+      return;
+    }
+    if (name === s.certifiedBy) return;
+    setCertifiedDraft(name);
+    try {
+      await fapi("POST", `/api/training/${j.id}/attendance-meta`, { certifiedBy: name });
+      toast("Certified to updated on the attendance sheet.");
+      await reload();
     } catch (e) {
       toast((e as Error).message);
     }
@@ -468,6 +556,29 @@ export function Attendance({
         </div>
       )}
       <div className="card">
+        {office && (
+          <p style={{ margin: "0 0 12px" }}>
+            <span className="mini">Customer link: {publicUrl}</span>
+            <br />
+            <button
+              className="btn ghost"
+              style={{ marginTop: 8 }}
+              onClick={async () => {
+                const text =
+                  "Westcal training attendance — open this link, upload your Emirates ID, check your details, sign and send:\n" +
+                  publicUrl;
+                try {
+                  await navigator.clipboard.writeText(text);
+                  toast("Customer attendance link copied.");
+                } catch {
+                  prompt("Copy this customer link", publicUrl);
+                }
+              }}
+            >
+              Copy customer attendance link
+            </button>
+          </p>
+        )}
         <div className="wc-top">
           <div className="wc-ct">
             T: +9714 576 2773
@@ -482,17 +593,31 @@ export function Attendance({
         </div>
         <div className="wc-bar">WESTCAL INSTRUMENTATION AND CALIBRATION SERVICES LLC</div>
         <h2 style={{ margin: "0 0 6px", textAlign: "center" }}>Attendance</h2>
+        {office && (
+          <p style={{ textAlign: "center", margin: "0 0 12px" }}>
+            <button
+              className="btn ok"
+              onClick={() =>
+                download(
+                  `/api/training/${j.id}/attendance-pdf`,
+                  "WESTCAL-" + (j.jobOrderNo || j.jobNo) + "-attendance.pdf",
+                  "Attendance sheet downloaded.",
+                )
+              }
+            >
+              Download attendance sheet
+            </button>
+          </p>
+        )}
         <p className="muted" style={{ textAlign: "center" }}>
-          {s.courseTitle} | {s.date} | {s.invoiced}
+          {s.courseTitle} | {s.date} | {companyDraft}
         </p>
-        <table className="sheet" style={{ marginTop: 12, minWidth: 0 }}>
+        <table className="sheet facts">
           <tbody>
             {[
               [s.jobLabel, s.jobNo],
               ["Training", s.courseTitle],
               ["Training date", s.date],
-              ["Company", s.invoiced],
-              ["Certified to", s.certifiedBy],
             ].map(([k, v]) => (
               <tr key={k}>
                 <td>
@@ -503,196 +628,292 @@ export function Attendance({
                 </td>
               </tr>
             ))}
+            <tr>
+              <td>
+                <b>Company</b>
+              </td>
+              <td>
+                {canMark ? (
+                  <input
+                    value={companyDraft}
+                    aria-label="Company"
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      setCompanyDraft(name);
+                      setPersonCompany(Object.fromEntries(j.attendees.map((a) => [a.id, name])));
+                    }}
+                    onBlur={() => saveSheetCompany(companyDraft)}
+                  />
+                ) : (
+                  <b>{companyDraft}</b>
+                )}
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <b>Certified to</b>
+              </td>
+              <td>
+                {canMark ? (
+                  <input
+                    value={certifiedDraft}
+                    aria-label="Certified to"
+                    onChange={(e) => setCertifiedDraft(e.target.value)}
+                    onBlur={() => saveCertifiedTo(certifiedDraft)}
+                  />
+                ) : (
+                  <b>{certifiedDraft}</b>
+                )}
+              </td>
+            </tr>
           </tbody>
         </table>
-        <div className="sheetwrap">
-          <table className="sheet">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Trainee</th>
-                <th>Photo</th>
-                <th>Signature</th>
-              </tr>
-            </thead>
-            <tbody>
-              {j.attendees.length ? (
-                j.attendees.map((a, i) => {
-                  const photo = a.photoDataUrl || a.extraPhotoDataUrl || "";
-                  const open = rowEdit?.id === a.id;
-                  return (
-                    <tr
-                      key={a.id}
-                      className={dropRow === a.id ? "dragover" : undefined}
-                      onDragOver={(e) => {
-                        if (!canMark) return;
-                        e.preventDefault();
-                        if (dropRow !== a.id) setDropRow(a.id);
-                      }}
-                      onDragLeave={(e) => {
-                        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropRow(null);
-                      }}
-                      onDrop={(e) => {
-                        if (!canMark) return;
-                        e.preventDefault();
-                        setDropRow(null);
-                        const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
-                        if (file) replaceId(a, file);
-                      }}
-                    >
-                      <td>{i + 1}</td>
-                      <td>
-                        <b>{a.name}</b>
-                        <br />
-                        <span className="mini">EID: {a.idOrVisaNo || "not on file — Re-upload EID or type it"}</span>
-                        <br />
-                        <span className="mini">Training date: {s.date}</span>
-                        <br />
-                        <span className="mini">Certified to: {s.certifiedBy}</span>
-                        <br />
-                        <span className="mini">{a.course || j.course || ""}</span>
-                        {canMark && (
-                          <>
-                            <div className="attacts">
-                              <button
-                                className="btn sec"
-                                onClick={() => setRowEdit(open ? null : { id: a.id, focusEid: false })}
-                              >
-                                {open ? "Close" : "Edit"}
-                              </button>
-                              <label className="btn ghost" htmlFor={`repid_${a.id}`}>
-                                Re-upload EID
-                              </label>
-                              <input
-                                id={`repid_${a.id}`}
-                                className="sr-only"
-                                type="file"
-                                accept="image/*"
-                                capture="environment"
-                                onChange={(e) => e.target.files?.[0] && replaceId(a, e.target.files[0])}
-                              />
-                              <label className="btn ghost" htmlFor={`repph_${a.id}`}>
-                                New photo
-                              </label>
-                              <input
-                                id={`repph_${a.id}`}
-                                className="sr-only"
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => e.target.files?.[0] && replacePhoto(a, e.target.files[0])}
-                              />
-                            </div>
-                            {open && rowEdit && (
-                              <RowEdit
-                                j={j}
-                                a={a}
-                                focusEid={rowEdit.focusEid}
-                                eid={rowEdit.eid}
-                                onDone={() => setRowEdit(null)}
-                                reload={reload}
-                              />
-                            )}
-                          </>
-                        )}
-                      </td>
-                      <td className="sig">
-                        {photo && (
-                          <img
-                            src={photo}
-                            alt=""
-                            style={{ height: 72, width: 58, objectFit: "cover", maxWidth: "none" }}
-                          />
-                        )}
-                      </td>
-                      <td className="sig">
-                        {canMark ? (
-                          <>
-                            <Pad
-                              className="rowsig"
-                              initial={a.signature}
-                              ref={(h) => {
-                                rowPads.current.set(a.id, h);
-                              }}
-                            />
-                            <button
-                              className="btn ghost"
-                              style={{ minHeight: 36, marginTop: 6 }}
-                              onClick={() => {
-                                rowPads.current.get(a.id)?.clear();
-                                fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { signature: "" })
-                                  .then(() => toast("Signature cleared."))
-                                  .catch((e) => toast(e.message));
-                              }}
-                            >
-                              Clear
-                            </button>
-                            <button
-                              className="btn sec"
-                              style={{ minHeight: 36, marginTop: 6 }}
-                              onClick={async () => {
-                                const pad = rowPads.current.get(a.id);
-                                if (!pad) return;
-                                try {
-                                  await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, {
-                                    signature: pad.dataUrl(),
-                                  });
-                                  toast("Signature submitted.");
-                                } catch (e) {
-                                  toast((e as Error).message);
-                                }
-                              }}
-                            >
-                              Submit
-                            </button>
-                          </>
-                        ) : (
-                          a.signature && <img src={a.signature} alt="sign" />
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={4} className="muted">
-                    No trainees yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="att-list">
+          {j.attendees.length ? (
+            j.attendees.map((a, i) => {
+              const photo = a.photoDataUrl || a.extraPhotoDataUrl || a.idCardDataUrl || "";
+              const open = rowEdit?.id === a.id;
+              return (
+                <article
+                  key={a.id}
+                  className={"att-card" + (dropRow === a.id ? " dragover" : "")}
+                  onDragOver={(e) => {
+                    if (!canMark) return;
+                    e.preventDefault();
+                    if (dropRow !== a.id) setDropRow(a.id);
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropRow(null);
+                  }}
+                  onDrop={(e) => {
+                    if (!canMark) return;
+                    e.preventDefault();
+                    setDropRow(null);
+                    const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
+                    if (file) replaceId(a, file);
+                  }}
+                >
+                  <div className="att-head">
+                    {photo ? <img className="att-photo" src={photo} alt="" /> : <div className="att-photo empty">No photo</div>}
+                    <div className="grow">
+                      <b>
+                        {i + 1}. {a.name}
+                      </b>
+                      <div className="mini">EID: {a.idOrVisaNo || "re-upload ID or type it"}</div>
+                      <div className="mini">Company: {personCompany[a.id] ?? (a.company || companyDraft || "-")}</div>
+                      <div className="mini">Certified to: {certifiedDraft || "-"}</div>
+                      <div className="mini">{a.course || j.course || ""}</div>
+                    </div>
+                  </div>
+                  {canMark && (
+                    <>
+                      <div className="attacts">
+                        <button
+                          type="button"
+                          className="btn sec"
+                          onClick={() => setRowEdit(open ? null : { id: a.id, focusEid: false })}
+                        >
+                          {open ? "Close" : "Edit"}
+                        </button>
+                        <label className="btn ghost" htmlFor={`repid_${a.id}`}>
+                          Re-upload EID
+                        </label>
+                        <input
+                          id={`repid_${a.id}`}
+                          className="sr-only"
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = "";
+                            if (file) replaceId(a, file);
+                          }}
+                        />
+                        <label className="btn ghost" htmlFor={`repph_${a.id}`}>
+                          New photo
+                        </label>
+                        <input
+                          id={`repph_${a.id}`}
+                          className="sr-only"
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = "";
+                            if (file) replacePhoto(a, file);
+                          }}
+                        />
+                        <button className="btn ghost" onClick={() => deleteTrainee(a)}>
+                          Delete
+                        </button>
+                      </div>
+                      {open && rowEdit && (
+                        <RowEdit
+                          j={j}
+                          a={a}
+                          focusEid={rowEdit.focusEid}
+                          eid={rowEdit.eid}
+                          certifiedTo={certifiedDraft}
+                          onApplied={(patch) => {
+                            setPersonCompany((current) => ({ ...current, [a.id]: patch.company }));
+                            if (patch.certifiedTo) setCertifiedDraft(patch.certifiedTo);
+                          }}
+                          onDone={() => setRowEdit(null)}
+                          reload={reload}
+                        />
+                      )}
+                      <div className="sigwrap" style={{ marginTop: 10 }}>
+                        <Pad
+                          key={(sigPreview[a.id] ?? a.signature) || "blank-" + a.id}
+                          className="rowsig"
+                          initial={sigPreview[a.id] ?? a.signature}
+                          ref={(h) => {
+                            rowPads.current.set(a.id, h);
+                          }}
+                        />
+                      </div>
+                      <div className="attacts">
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => {
+                            rowPads.current.get(a.id)?.clear();
+                            setSigPreview((current) => ({ ...current, [a.id]: "" }));
+                            fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { signature: "" })
+                              .then(() => toast("Signature cleared."))
+                              .catch((e) => toast(e.message));
+                          }}
+                        >
+                          Clear
+                        </button>
+                        <label className="btn ghost" htmlFor={`sigup_${a.id}`}>
+                          Upload signature
+                        </label>
+                        <input
+                          id={`sigup_${a.id}`}
+                          className="sr-only"
+                          type="file"
+                          accept="image/*"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = "";
+                            if (!file) return;
+                            if (!file.type.startsWith("image/")) {
+                              toast("Upload a picture of the signature (JPG or PNG).");
+                              return;
+                            }
+                            try {
+                              const dataUrl = await shrinkImage(file, 900);
+                              await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { signature: dataUrl });
+                              setSigPreview((current) => ({ ...current, [a.id]: dataUrl }));
+                              toast("Trainee signature uploaded.");
+                              await reload();
+                            } catch (err) {
+                              toast((err as Error).message);
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn sec"
+                          onClick={async () => {
+                            const pad = rowPads.current.get(a.id);
+                            if (!pad) return;
+                            try {
+                              await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, {
+                                signature: pad.dataUrl(),
+                              });
+                              toast("Signature submitted.");
+                            } catch (e) {
+                              toast((e as Error).message);
+                            }
+                          }}
+                        >
+                          Submit
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {!canMark && a.signature && <img className="sg" src={a.signature} alt="sign" />}
+                </article>
+              );
+            })
+          ) : (
+            <p className="muted">No trainees yet.</p>
+          )}
         </div>
         {canMark && (
           <>
             <label className="fl">Authorized by</label>
             <input value={authorized} placeholder="Trainer name" onChange={(e) => setAuthorized(e.target.value)} />
             <label className="fl" id="tsiglbl">
-              Authorized by signature (optional)
+              {office ? "Certificate Coordinator signature" : "Authorized by signature (optional)"}
             </label>
             <div className="sigwrap">
-            <Pad
-              className="sig"
-              label="Authorized by signature"
+              <Pad
+                key={shownSig || "blank"}
+                className="sig"
+                label={office ? "Certificate Coordinator signature" : "Authorized by signature"}
                 ref={trainerPad}
-                initial={j.trainerSignature}
+                initial={shownSig}
                 onDone={(d) => (trainerSig.current = d)}
               />
-              <div className="sighint">Trainer signs here</div>
+              <div className="sighint">
+                {office ? "Draw the Certificate Coordinator signature, or upload a picture" : "Trainer signs here"}
+              </div>
             </div>
+            {office && (
+              <>
+                <input
+                  ref={sigFile}
+                  className="sr-only"
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    if (!file.type.startsWith("image/")) {
+                      toast("Upload a picture of the signature (JPG or PNG).");
+                      return;
+                    }
+                    try {
+                      const dataUrl = await shrinkImage(file, 900);
+                      trainerSig.current = dataUrl;
+                      setShownSig(dataUrl);
+                      await fapi("POST", `/api/training/${j.id}/attendance-meta`, {
+                        trainerVerified: verified,
+                        authorizedBy: authorized,
+                        trainerSignature: dataUrl,
+                      });
+                      toast("Coordinator signature uploaded.");
+                      await reload();
+                    } catch (err) {
+                      toast((err as Error).message);
+                    }
+                  }}
+                />
+                <button type="button" className="btn sec" style={{ marginTop: 8 }} onClick={() => sigFile.current?.click()}>
+                  Upload coordinator signature
+                </button>
+              </>
+            )}
             <button
+              type="button"
               className="btn ghost"
               style={{ marginTop: 10 }}
               onClick={() => {
                 trainerPad.current?.clear();
                 trainerSig.current = null;
+                setShownSig("");
               }}
             >
-              Clear trainer signature
+              Clear {office ? "coordinator" : "trainer"} signature
             </button>
             {j.trainerSignature && (
               <>
-                <p className="okmsg">Trainer signature on file.</p>
-                <img className="sg" src={j.trainerSignature} alt="Trainer signature" />
+                <p className="okmsg">{office ? "Coordinator signature on file." : "Trainer signature on file."}</p>
+                <img className="sg" src={j.trainerSignature} alt="Signature" />
               </>
             )}
             <label className="checkline">
@@ -737,9 +958,16 @@ export function Attendance({
         </button>
       </div>
       {canSubmit && (
-        <button className="btn ok" onClick={submitJob}>
-          {j.status === "Rejected" ? "Send back to Certificate Coordinator" : "Send to Certificate Coordinator"}
-        </button>
+        <>
+          <button className="btn ok" disabled={showAttendance && !verified} onClick={submitJob}>
+            {j.status === "Rejected" ? "Send back to Certificate Coordinator" : "Send to Certificate Coordinator"}
+          </button>
+          {showAttendance && !verified && (
+            <p className="muted" style={{ margin: "8px 0 0", textAlign: "center" }}>
+              Tick <b>I verified this attendance sheet</b> first, then you can send.
+            </p>
+          )}
+        </>
       )}
     </>
   );
@@ -750,6 +978,8 @@ function RowEdit({
   a,
   focusEid,
   eid,
+  certifiedTo,
+  onApplied,
   onDone,
   reload,
 }: {
@@ -757,6 +987,8 @@ function RowEdit({
   a: Attendee;
   focusEid: boolean;
   eid?: string;
+  certifiedTo: string;
+  onApplied: (patch: { company: string; certifiedTo: string }) => void;
   onDone: () => void;
   reload: () => Promise<Job[]>;
 }) {
@@ -766,21 +998,34 @@ function RowEdit({
     eid: eid || a.idOrVisaNo || "",
     phone: a.mobileNumber || "",
     company: a.company || "",
+    certifiedTo: certifiedTo || "",
   });
   const [err, setErr] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.scrollIntoView({ block: "nearest" });
+  }, []);
 
   async function save() {
     setErr("");
     const name = f.name.trim();
     const mobileNumber = f.phone.replace(/[\s\-+]/g, "");
+    const company = f.company.trim();
+    const certified = f.certifiedTo.trim();
     if (!name) return setErr("Name is required.");
+    if (!company) return setErr("Company is required.");
+    if (!certified) return setErr("Certified to is required.");
     try {
       await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, {
         name,
         idOrVisaNo: f.eid.trim(),
         mobileNumber,
-        company: f.company.trim(),
+        company,
       });
+      if (certified !== certifiedTo.trim()) {
+        await fapi("POST", `/api/training/${j.id}/attendance-meta`, { certifiedBy: certified });
+      }
+      onApplied({ company, certifiedTo: certified });
       toast("Trainee updated.");
       onDone();
       await reload();
@@ -790,10 +1035,7 @@ function RowEdit({
   }
 
   return (
-    <div
-      style={{ marginTop: 10, textAlign: "left" }}
-      ref={(el) => el?.scrollIntoView({ behavior: "smooth", block: "center" })}
-    >
+    <div ref={box} style={{ marginTop: 10, textAlign: "left" }}>
       <label className="fl">Name</label>
       <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
       <label className="fl">Emirates ID</label>
@@ -807,7 +1049,9 @@ function RowEdit({
       <input value={f.phone} inputMode="tel" onChange={(e) => setF({ ...f, phone: e.target.value })} />
       <label className="fl">Company</label>
       <input value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} />
-      <button className="btn ok" style={{ marginTop: 10 }} onClick={save}>
+      <label className="fl">Certified to</label>
+      <input value={f.certifiedTo} onChange={(e) => setF({ ...f, certifiedTo: e.target.value })} />
+      <button type="button" className="btn ok" style={{ marginTop: 10 }} onClick={save}>
         Save update
       </button>
       <div className="err">{err}</div>

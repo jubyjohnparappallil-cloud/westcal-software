@@ -67,4 +67,12 @@ describe("UsersService", () => {
       { numRuns: 200 }
     );
   });
+
+  it("updates stored role ids when the role is changed", () => {
+    const { perms, users } = makeService();
+    perms.registerRole({ id: "role-b", name: "B" });
+    const created = users.createUser({ identifier: "sajid", credential: "pw", roleIds: ["role-a"] });
+    users.setRoleIds(created.id, ["role-b"]);
+    expect(users.getUser(created.id).roleIds).toEqual(["role-b"]);
+  });
 });

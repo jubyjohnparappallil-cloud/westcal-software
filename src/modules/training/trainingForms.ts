@@ -32,7 +32,7 @@ type PdfKitInternals = PdfDoc & {
 export function applyDocumentControlFooter(
   doc: PdfDoc,
   controlLine: string,
-  opts?: { copyright?: boolean }
+  opts?: { copyright?: boolean; pageNumber?: boolean }
 ): void {
   const pdf = doc as PdfKitInternals;
   const origContinue = pdf.continueOnNewPage.bind(doc);
@@ -59,17 +59,19 @@ export function applyDocumentControlFooter(
     }
     doc.font("Times-Italic").fontSize(7).fillColor("#111")
       .text(controlLine, 36, yDoc, {
-        width: pageW - 140,
+        width: pageW - (opts?.pageNumber === false ? 72 : 140),
         height: 10,
         lineBreak: false,
       });
-    doc.font("Times-Roman").fontSize(7)
-      .text(`Page ${i + 1} of ${total}`, pageW - 92, yDoc, {
-        width: 56,
-        height: 10,
-        align: "right",
-        lineBreak: false,
-      });
+    if (opts?.pageNumber !== false) {
+      doc.font("Times-Roman").fontSize(7)
+        .text(`Page ${i + 1} of ${total}`, pageW - 92, yDoc, {
+          width: 56,
+          height: 10,
+          align: "right",
+          lineBreak: false,
+        });
+    }
     page.margins.top = top;
     page.margins.bottom = bottom;
   }
@@ -101,6 +103,39 @@ function box(
     lineBreak: false,
     ellipsis: true,
   });
+}
+
+/** Job number printed on the training pack: TR… only, without the WC- prefix. */
+function trNumber(job: TrainingJob): string {
+  const jobNo = String(job.jobNo || "").trim().replace(/^WC-/i, "");
+  return jobNo || String(job.jobOrderNo || "").trim();
+}
+
+function fileToken(value: string): string {
+  return (value || "job").replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+/** yyyy-mm-dd (or a from/to range) printed as dd-mm-yyyy. */
+function formatDisplayDate(value: string | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return raw.split(/\s+to\s+/i).map((part) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(part.trim());
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : part.trim();
+  }).join(" to ");
+}
+
+/** 24-hour HH:mm printed with AM/PM. */
+function formatDisplayTime(value: string | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+  if (/\b(am|pm)\b/i.test(raw)) return raw.replace(/\b(am|pm)\b/gi, (s) => s.toUpperCase());
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(raw);
+  if (!m) return raw;
+  let hour = Number(m[1]);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  hour = hour % 12 || 12;
+  return `${String(hour).padStart(2, "0")}:${m[2]} ${suffix}`;
 }
 
 export async function sendWorkPermitPdf(res: ServerResponse, job: TrainingJob): Promise<void> {
@@ -173,37 +208,28 @@ export async function sendWorkPermitPdf(res: ServerResponse, job: TrainingJob): 
   doc.end();
 }
 
-export async function sendContractReviewPdf(res: ServerResponse, job: TrainingJob): Promise<void> {
-  const logo = await readFile(LOGO).catch(() => null);
-  const no = (job.jobOrderNo || job.jobNo || "job").replace(/[^a-zA-Z0-9_-]/g, "_");
+function drawContractReviewBody(doc: PdfDoc, job: TrainingJob, logo: Buffer | null): void {
   const r = job.contractReview;
-  const doc = new PDFDocument({ size: "A4", margin: 36, info: { Title: `Contract Review ${job.jobNo}` } });
-  res.writeHead(200, {
-    "Content-Type": "application/pdf",
-    "Content-Disposition": `attachment; filename="WESTCAL-${no}-review-form.pdf"`,
-  });
-  doc.pipe(res);
   drawWestcalLetterhead(doc, logo);
   doc.fillColor("#17305f").font("Helvetica-Bold").fontSize(16)
-    .text("Training Contract Review Form (WQF11-02)", 36, 128, { align: "center" });
+    .text("Training Contract Review Form", 36, 128, { align: "center" });
   let y = 164;
   const w = 523;
-  box(doc, "Job no.", r?.jobNo || job.jobNo, 36, y, 170);
-  box(doc, "Job order no.", job.jobOrderNo, 206, y, 170);
-  box(doc, "Training date", formatJobDates(job), 376, y, 183);
+  box(doc, "Job number", trNumber(job), 36, y, 170);
+  box(doc, "Training date", formatDisplayDate(formatJobDates(job)), 206, y, 170);
+  box(doc, "Time", formatDisplayTime(job.trainingTime), 376, y, 183);
   y += 28;
   box(doc, "Customer name", r?.customerName || job.customerName, 36, y, w);
   y += 28;
   box(doc, "Scope of work", r?.scopeOfWork || job.course, 36, y, w);
   y += 28;
   box(doc, "Contact person / number", r?.contactPersonNumber || job.contactNameNumber, 36, y, 260);
-  box(doc, "Prepared by", r?.crPreparedBy, 296, y, 263);
+  box(doc, "CR prepared by", r?.crPreparedBy, 296, y, 263);
   y += 28;
   box(doc, "Trainer", r?.trainerName || job.assigneeName || job.trainerName, 36, y, 260);
   box(doc, "Standard reference", r?.standardReference || job.standardReference, 296, y, 263);
   y += 28;
-  box(doc, "Training method used", r?.trainingMethodUsed || job.mode, 36, y, 260);
-  box(doc, "Type of training", r?.typeOfTraining || job.typeOfTraining, 296, y, 263);
+  box(doc, "Training method used", r?.trainingMethodUsed || job.mode, 36, y, w);
   y += 28;
   box(doc, "Customer feedback", r?.customerFeedback || "Not recorded", 36, y, 170);
   box(doc, "Feedback notes", r?.customerFeedbackNotes, 206, y, 353, 40);
@@ -230,17 +256,19 @@ export async function sendContractReviewPdf(res: ServerResponse, job: TrainingJo
   y += 36;
   box(doc, "Checked by MR / TM", r?.checkedByMRTM, 36, y, 260);
   box(doc, "Final checked by BM", r?.finalCheckedByBM, 296, y, 263);
-  y += 50;
-  doc.font("Helvetica-Bold").fontSize(11).text("Trainer verified attendance sheet", 36, y);
-  doc.font("Helvetica").fontSize(10).text(job.trainerVerified ? "Yes" : "No", 36, y + 16);
-  y += 40;
-  doc.font("Helvetica-Bold").fontSize(11).text("Authorized by", 36, y);
-  if (job.trainerSignature) {
-    try { doc.image(dataUrlBuffer(job.trainerSignature), 36, y + 16, { fit: [180, 46] }); } catch { /* skip */ }
-  } else {
-    doc.moveTo(36, y + 50).lineTo(220, y + 50).stroke("#111");
-  }
-  doc.font("Helvetica").fontSize(10).text(job.authorizedBy || job.assigneeName || job.trainerName || "", 36, y + 66);
+}
+
+export async function sendContractReviewPdf(res: ServerResponse, job: TrainingJob): Promise<void> {
+  const logo = await readFile(LOGO).catch(() => null);
+  const no = fileToken(trNumber(job));
+  const doc = new PDFDocument({ size: "A4", margin: 36, bufferPages: true, info: { Title: `Training Contract Review Form ${trNumber(job)}` } });
+  res.writeHead(200, {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="WESTCAL-${no}-training-contract-review-form.pdf"`,
+  });
+  doc.pipe(res);
+  drawContractReviewBody(doc, job, logo);
+  applyDocumentControlFooter(doc, DOC_CONTROL.jobOrder);
   doc.end();
 }
 
@@ -262,23 +290,15 @@ export function drawWestcalLetterhead(doc: PdfDoc, logo: Buffer | null): number 
   return 128;
 }
 
-export async function sendAssignedJobSheetPdf(res: ServerResponse, job: TrainingJob): Promise<void> {
-  const logo = await readFile(LOGO).catch(() => null);
-  const no = (job.jobOrderNo || job.jobNo || "job").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const doc = new PDFDocument({ size: "A4", margin: 36, bufferPages: true, info: { Title: `Assigned job sheet ${job.jobNo}` } });
-  res.writeHead(200, {
-    "Content-Type": "application/pdf",
-    "Content-Disposition": `attachment; filename="WESTCAL-${no}-job-sheet.pdf"`,
-  });
-  doc.pipe(res);
-
+function drawAssignedJobSheetBody(doc: PdfDoc, job: TrainingJob, logo: Buffer | null): void {
   const navy = "#17305f";
   drawWestcalLetterhead(doc, logo);
 
+  const training = (job.serviceType || "Training") === "Training";
   doc.fillColor(navy).font("Helvetica-Bold").fontSize(16)
-    .text("Assigned Job Sheet", 36, 128, { align: "center" });
+    .text(training ? "Training Work Permit" : "Assigned Job Sheet", 36, 128, { align: "center" });
   doc.font("Helvetica").fontSize(10).fillColor("#444")
-    .text("Job assignment details for office and field staff", { align: "center" });
+    .text(training ? "Training work permit for office and field staff" : "Job assignment details for office and field staff", { align: "center" });
 
   let y = 168;
   if (job.status === "Cancelled") {
@@ -290,17 +310,29 @@ export async function sendAssignedJobSheetPdf(res: ServerResponse, job: Training
   }
   const w = 523;
   const companies = (job.companies && job.companies.length ? job.companies : [job.customerName]).filter(Boolean).join(" · ");
-  box(doc, "Job no.", job.jobNo, 36, y, 170);
-  box(doc, "Job order no.", job.jobOrderNo || job.jobNo, 206, y, 170);
-  box(doc, "Status", job.status, 376, y, 183);
-  y += 28;
-  box(doc, "Service", job.serviceType || "Training", 36, y, 170);
-  box(doc, "Date", formatJobDates(job), 206, y, 170);
-  box(doc, "Time", job.trainingTime || "-", 376, y, 183);
-  y += 28;
-  box(doc, "Location", job.location || "-", 36, y, 170);
-  box(doc, "Mode", job.mode || "-", 206, y, 170);
-  box(doc, "Type of training", job.typeOfTraining || "-", 376, y, 183);
+  if (training) {
+    box(doc, "TR number", trNumber(job), 36, y, 340);
+    box(doc, "Status", job.status, 376, y, 183);
+    y += 28;
+    box(doc, "Service", job.serviceType || "Training", 36, y, 170);
+    box(doc, "Date", formatDisplayDate(formatJobDates(job)) || "-", 206, y, 170);
+    box(doc, "Time", formatDisplayTime(job.trainingTime), 376, y, 183);
+    y += 28;
+    box(doc, "Location", job.location || "-", 36, y, 260);
+    box(doc, "Mode", job.mode || "-", 296, y, 263);
+  } else {
+    box(doc, "Job no.", job.jobNo, 36, y, 170);
+    box(doc, "Job order no.", job.jobOrderNo || job.jobNo, 206, y, 170);
+    box(doc, "Status", job.status, 376, y, 183);
+    y += 28;
+    box(doc, "Service", job.serviceType || "Training", 36, y, 170);
+    box(doc, "Date", formatJobDates(job), 206, y, 170);
+    box(doc, "Time", job.trainingTime || "-", 376, y, 183);
+    y += 28;
+    box(doc, "Location", job.location || "-", 36, y, 170);
+    box(doc, "Mode", job.mode || "-", 206, y, 170);
+    box(doc, "Type of training", job.typeOfTraining || "-", 376, y, 183);
+  }
   y += 28;
   box(doc, "Company / companies", companies, 36, y, w, 36);
   y += 36;
@@ -313,7 +345,14 @@ export async function sendAssignedJobSheetPdf(res: ServerResponse, job: Training
   y += 28;
   box(doc, "Sales person", job.salesPerson || "-", 36, y, 170);
   box(doc, "Handed over to", job.handedOverTo || job.assigneeName || "-", 206, y, 170);
-  box(doc, "Required date", job.requiredDateForService || job.trainingDate || "-", 376, y, 183);
+  box(
+    doc,
+    "Required date",
+    (training ? formatDisplayDate(job.requiredDateForService || job.trainingDate) : (job.requiredDateForService || job.trainingDate)) || "-",
+    376,
+    y,
+    183,
+  );
   y += 28;
   box(doc, "Client requirements", job.clientRequirements || "-", 36, y, w, 40);
   y += 48;
@@ -345,20 +384,30 @@ export async function sendAssignedJobSheetPdf(res: ServerResponse, job: Training
     });
     y += 22;
   });
+}
 
-  if (job.attendees.length) {
-    y += 18;
-    if (y > 700) { doc.addPage(); y = 40; }
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#111")
-      .text(`Trainees (${job.attendees.length}${job.expectedTraineeCount ? " / " + job.expectedTraineeCount : ""})`, 36, y);
-    y += 16;
-    job.attendees.forEach((a, i) => {
-      if (y > 740) { doc.addPage(); y = 40; }
-      doc.font("Helvetica").fontSize(9).fillColor("#111")
-        .text(`${i + 1}. ${a.name || "-"}  ·  ${a.company || job.customerName}  ·  ${a.course || job.course}  ·  ${a.idOrVisaNo || ""}`, 36, y, { width: w });
-      y += 16;
-    });
+export async function sendAssignedJobSheetPdf(res: ServerResponse, job: TrainingJob): Promise<void> {
+  const logo = await readFile(LOGO).catch(() => null);
+  const training = (job.serviceType || "Training") === "Training";
+  const no = training ? fileToken(trNumber(job)) : fileToken(job.jobOrderNo || job.jobNo || "job");
+  const fileName = training ? `WESTCAL-${no}-training-contract-review-form.pdf` : `WESTCAL-${no}-job-sheet.pdf`;
+  const doc = new PDFDocument({
+    size: "A4",
+    margin: 36,
+    bufferPages: true,
+    info: { Title: training ? `Training Contract Review Form ${trNumber(job)}` : `Assigned job sheet ${job.jobNo}` },
+  });
+  res.writeHead(200, {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="${fileName}"`,
+  });
+  doc.pipe(res);
+  drawAssignedJobSheetBody(doc, job, logo);
+  if (training) {
+    doc.addPage();
+    drawContractReviewBody(doc, job, logo);
   }
   applyDocumentControlFooter(doc, DOC_CONTROL.jobOrder);
   doc.end();
 }
+

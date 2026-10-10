@@ -56,6 +56,7 @@ function seedRolePermissions(p: Platform): void {
     { module: "Invoice", action: "create" },
     { module: "Invoice", action: "monitor" },
     { module: "Reports", action: "read" },
+    { module: "Mapping", action: "add_rows" },
   ]);
   p.permissions.fullAccessRoles.add(ROLES.SUPER_ADMIN);
   const officeTraining = [
@@ -213,6 +214,53 @@ function dataUrlBuffer(dataUrl: string): Buffer {
   return Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
 }
 
+function imagePixelSize(buf: Buffer): { w: number; h: number } | null {
+  if (buf.length > 24 && buf[0] === 0x89 && buf[1] === 0x50) {
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  }
+  if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let o = 2;
+    while (o < buf.length - 8) {
+      if (buf[o] !== 0xff) { o++; continue; }
+      const marker = buf[o + 1];
+      if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+        return { h: buf.readUInt16BE(o + 5), w: buf.readUInt16BE(o + 7) };
+      }
+      const len = buf.readUInt16BE(o + 2);
+      if (!len) break;
+      o += 2 + len;
+    }
+  }
+  return null;
+}
+
+/** Wide uploads are Emirates ID scans. The face sits on the left; print only that. */
+function drawIdPhoto(doc: PDFDocument, buf: Buffer, photoX: number, photoY: number, photoSide: number): void {
+  const size = imagePixelSize(buf);
+  const idCard = size && size.w > size.h * 1.15;
+  doc.save();
+  doc.rect(photoX, photoY, photoSide, photoSide).clip();
+  if (idCard && size) {
+    const fx = 0.086;
+    const fy = 0.335;
+    const fw = 0.184;
+    const fh = 0.348;
+    const regionW = size.w * fw;
+    const regionH = size.h * fh;
+    const scale = Math.max(photoSide / regionW, photoSide / regionH);
+    const dx = photoX - fx * size.w * scale + (photoSide - regionW * scale) / 2;
+    const dy = photoY - fy * size.h * scale + (photoSide - regionH * scale) / 2;
+    doc.image(buf, dx, dy, { width: size.w * scale, height: size.h * scale });
+  } else {
+    doc.image(buf, photoX, photoY, {
+      cover: [photoSide, photoSide],
+      align: "center",
+      valign: "center",
+    });
+  }
+  doc.restore();
+}
+
 async function sendTrainingCardPdf(
   res: ServerResponse,
   job: TrainingJob,
@@ -243,66 +291,84 @@ async function sendTrainingCardPdf(
   }
 
   const navy = "#1e4b8f";
+  const ink = "#111111";
   try { doc.image(logo, W * 0.62, H * 0.025, { fit: [W * 0.28, H * 0.14], align: "right" }); } catch { /* logo optional */ }
 
-  const nameX = W * 0.24;
-  const nameW = W * 0.36;
+  const photoSide = 120;
+  const photoX = 314;
+  const photoY = 66;
+  const textLeft = W * 0.24;
+  const textRight = photoX - 10;
+  const textW = textRight - textLeft;
   const name = (c.name || "").toUpperCase();
+  const nameLeft = W * 0.19;
+  const nameW = photoX - 6 - nameLeft;
   doc.font("Helvetica-Bold");
-  let nameSize = 13;
-  while (nameSize > 7 && doc.fontSize(nameSize).widthOfString(name) > nameW) nameSize -= 0.4;
+  let nameSize = 22;
+  while (nameSize > 15 && doc.fontSize(nameSize).widthOfString(name) > nameW) nameSize -= 0.5;
   const nameLines = doc.fontSize(nameSize).widthOfString(name) > nameW ? 2 : 1;
-  doc.fillColor(navy).font("Helvetica-Bold").fontSize(nameSize)
-    .text(name, nameX, H * 0.25, { width: nameW, align: "center", height: nameLines === 1 ? 18 : 32 });
+  const nameY = H * 0.19;
+  const nameHeight = nameLines === 1 ? nameSize + 4 : nameSize * 2 + 8;
+  doc.fillColor("#000000").font("Helvetica-Bold").fontSize(nameSize);
+  const nameOpts = { width: nameW, align: "center" as const, lineGap: 1, height: nameHeight };
+  doc.text(name, nameLeft, nameY, nameOpts);
+  doc.text(name, nameLeft + 0.45, nameY, nameOpts);
   const trade = (c.course || "").trim();
-  doc.font("Helvetica");
-  let tradeSize = 10;
-  while (tradeSize > 7 && doc.fontSize(tradeSize).widthOfString(trade) > nameW) tradeSize -= 0.4;
-  doc.fillColor("#111").font("Helvetica").fontSize(tradeSize)
-    .text(trade, nameX, H * 0.38, { width: nameW, align: "center", height: 16 });
+  doc.font("Helvetica-Bold");
+  let tradeSize = 14;
+  while (tradeSize > 10 && doc.fontSize(tradeSize).widthOfString(trade) > textW) tradeSize -= 0.5;
+  const nameBottom = nameY + (nameLines === 1 ? nameSize + 2 : nameSize * 2 + 6);
+  const tradeY = Math.max(H * 0.35, nameBottom + 4);
+  doc.fillColor(ink).font("Helvetica-Bold").fontSize(tradeSize)
+    .text(trade, textLeft, tradeY, { width: textW, align: "center", height: tradeSize + 4 });
 
-  const attendeeCompany = trainee?.company || "";
-  const company = (c.company && c.company.trim().length > 1 ? c.company : "")
-    || (job.certificateUnder && job.certificateUnder.trim().length > 1 ? job.certificateUnder : "")
-    || attendeeCompany
-    || job.customerName
-    || "";
+  const companyChoices = [trainee?.company, job.certificateUnder, c.company]
+    .map((name) => (name || "").trim())
+    .filter((name) => name.length > 1)
+    .sort((a, b) => b.length - a.length);
+  const company = companyChoices[0] || (job.customerName || "").trim();
   const rows: Array<[string, string]> = [
     ["Certificate No", c.certificateNo || ""],
     ["Company", company],
     ["Training Date", c.trainingDate || ""],
     ["Expires on", c.expiresOn || ""],
   ];
-  let y = H * 0.47;
+  const labelSize = 12;
+  doc.font("Helvetica-Bold").fontSize(labelSize);
+  const labelW = Math.ceil(doc.widthOfString("Certificate No")) + 10;
+  const valueX = textLeft + labelW;
+  const valueW = textRight - valueX;
+  let y = Math.max(H * 0.47, tradeY + tradeSize + 10);
   for (const [label, value] of rows) {
-    doc.font("Helvetica").fontSize(8.5).fillColor("#4b5563")
-      .text(label, nameX, y, { width: 86, height: 12, lineBreak: false });
     const valueText = `: ${value}`;
+    const allowWrap = label === "Company";
     doc.font("Helvetica-Bold");
-    let size = 8.5;
-    while (size > 6.5 && doc.fontSize(size).widthOfString(valueText) > nameW - 90) size -= 0.4;
-    doc.fillColor("#111").font("Helvetica-Bold").fontSize(size)
-      .text(valueText, nameX + 88, y, { width: nameW - 90, height: 12, lineBreak: false });
-    y += 15;
+    let size = 12;
+    while (size > (allowWrap ? 9 : 6) && doc.fontSize(size).widthOfString(valueText) > valueW) size -= 0.4;
+    let wrap = false;
+    let rowH = 15;
+    if (allowWrap && doc.fontSize(size).widthOfString(valueText) > valueW) {
+      wrap = true;
+      size = 10;
+      while (size > 8 && doc.fontSize(size).heightOfString(valueText, { width: valueW }) > size * 2.4) size -= 0.4;
+      rowH = Math.min(30, doc.fontSize(size).heightOfString(valueText, { width: valueW }) + 2);
+    }
+    doc.font("Helvetica-Bold").fontSize(labelSize).fillColor(ink)
+      .text(label, textLeft, y, { width: labelW, height: 15, lineBreak: false });
+    doc.fillColor(ink).font("Helvetica-Bold").fontSize(size)
+      .text(valueText, valueX, y + (wrap ? 0 : (labelSize - size) * 0.15), {
+        width: valueW,
+        height: rowH,
+        lineBreak: wrap,
+      });
+    y += wrap ? Math.max(17, rowH + 2) : 17;
   }
 
-  const photoR = 58;
-  const photoCx = 384;
-  const photoCy = 132;
-  const photoSrc = trainee?.photoDataUrl || "";
-  doc.save();
-  doc.circle(photoCx, photoCy, photoR).clip();
+  const photoSrc = trainee?.photoDataUrl || trainee?.extraPhotoDataUrl || "";
   if (photoSrc) {
-    try {
-      const side = photoR * 2;
-      doc.image(dataUrlBuffer(photoSrc), photoCx - photoR, photoCy - photoR, {
-        cover: [side, side * 1.75],
-        align: "center",
-        valign: "center",
-      });
-    } catch { /* cleared circle */ }
+    try { drawIdPhoto(doc, dataUrlBuffer(photoSrc), photoX, photoY, photoSide); } catch { /* photo skipped */ }
   }
-  doc.restore();
+  doc.rect(photoX, photoY, photoSide, photoSide).lineWidth(1.6).strokeColor("#d4a017").stroke();
 
   if (verifyUrl) {
     const qrPng = await QRCode.toBuffer(verifyUrl, {
@@ -314,6 +380,21 @@ async function sendTrainingCardPdf(
     doc.rect(W * 0.30, H * 0.72, W * 0.26, H * 0.26).fill("#ffffff");
     doc.image(qrPng, W * 0.36, H * 0.76, { width: 52, height: 52 });
   }
+  // The artwork address is a tiny picture. Cover it and print bold type.
+  doc.rect(262, 210, 170, 80).fill("#f7fbfd");
+  const addressLines = [
+    "Westcal Instrumentation and",
+    "Calibration Services LLC",
+    "Morocco Cluster, International City",
+    "Dubai, UAE",
+    "+971 56 665 4326, +971 4 576 2773",
+    "training@westcal.ae",
+    "https://westcal.ae/",
+  ];
+  doc.font("Helvetica-Bold").fontSize(9).fillColor(ink);
+  addressLines.forEach((line, i) => {
+    doc.text(line, 266, 214 + i * 10.2, { width: 160, height: 11, lineBreak: false });
+  });
   doc.end();
 }
 
@@ -534,6 +615,70 @@ function migrateUserGrants(): void {
     );
   }
 }
+
+/** Keep login roles in sync with the People list, and give a new role its real permissions. */
+function applyRecordedRoles(userId: string, roleIds: string[], dropCustom: boolean): void {
+  const own = platform.permissions.getUserPermissions(userId);
+  const access = own.filter((p) => p.module === ACCESS_MODULE);
+  const extra = dropCustom ? [] : own.filter((p) => p.module !== ACCESS_MODULE);
+  platform.permissions.clearUserRoles(userId);
+  for (const roleId of roleIds) platform.permissions.assignUserRole(userId, roleId);
+  platform.permissions.setUserPermissions(userId, [...extra, ...access] as PermissionKey[]);
+}
+
+function notifyCertificateRequest(job: TrainingJob, fromUserId?: string): void {
+  let who = job.assigneeName || job.trainerName || "the field team";
+  if (fromUserId) {
+    try {
+      const u = platform.users.getUser(fromUserId);
+      who = u.displayName || u.identifier;
+    } catch {
+      /* keep assignee name */
+    }
+  }
+  const kind = job.serviceType && job.serviceType !== "Training" ? job.serviceType.toLowerCase() : "training";
+  const message = `Certificate requested for ${job.jobNo} (${kind}) by ${who}`;
+  for (const u of platform.users.listUsers()) {
+    const roles = platform.permissions.getUserRoleIds(u.id);
+    if (roles.includes(ROLES.TRAINER) || roles.includes(ROLES.SITE_ENGINEER)) continue;
+    if (roles.includes(ROLES.JOB_ASSISTANT) || platform.permissions.authorize(u.id, "Certificates", "edit")) {
+      platform.training.notifyUser(u.id, message, job.id);
+    }
+  }
+}
+
+function syncStoredRoles(): boolean {
+  let changed = false;
+  for (const u of platform.users.listUsers()) {
+    const permRoles = [...platform.permissions.getUserRoleIds(u.id)].sort().join(",");
+    const recRoles = [...u.roleIds].sort().join(",");
+    const own = platform.permissions.getUserPermissions(u.id);
+    const custom = own.some((p) => p.module === META_MODULE && p.action === "custom");
+    const roleKeys = new Set(
+      u.roleIds.flatMap((r) => platform.permissions.getRolePermissions(r).map((p) => `${p.module}:${p.action}`)),
+    );
+    const ownKeys = new Set(own.map((p) => `${p.module}:${p.action}`));
+    const roleCanIssue = roleKeys.has("Certificates:edit");
+    const ownCanIssue = ownKeys.has("Certificates:edit");
+    const leftoverOffice =
+      u.roleIds.includes(ROLES.JOB_ASSISTANT) &&
+      (ownKeys.has("Training:create") || ownKeys.has("Invoice:create")) &&
+      !roleKeys.has("Training:create");
+    const dropCustom = (custom && roleCanIssue && !ownCanIssue) || leftoverOffice;
+    if (permRoles !== recRoles || dropCustom) {
+      applyRecordedRoles(u.id, u.roleIds, dropCustom);
+      changed = true;
+      if (roleCanIssue) {
+        for (const job of platform.training.listJobs()) {
+          if (job.status === "Submitted") {
+            platform.training.notifyUser(u.id, `Certificate requested for ${job.jobNo}`, job.id);
+          }
+        }
+      }
+    }
+  }
+  return changed;
+}
 /** Job sheet, review form and work permit: the assigned field user, or office staff with Training:documents. */
 function requireJobForms(userId: string, jobId: string): void {
   requirePerm(userId, "Training", "read");
@@ -578,7 +723,7 @@ const LOG_REQUESTS = process.env.LOG_REQUESTS === "1";
 
 const WEB_DIST = join(__dirname, "..", "web", "dist");
 const WEB_TYPES: Record<string, string> = {
-  ".js": "text/javascript; charset=utf-8",
+  ".js": "application/javascript",
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".svg": "image/svg+xml",
@@ -601,7 +746,7 @@ async function sendWebApp(path: string, res: ServerResponse): Promise<void> {
     const isAsset = rel.startsWith("assets");
     res.writeHead(200, {
       "Content-Type": WEB_TYPES[extname(file)] ?? "application/octet-stream",
-      "Cache-Control": isAsset ? "public, max-age=31536000, immutable" : "no-cache",
+      "Cache-Control": isAsset ? "public, max-age=31536000, immutable" : "no-store, no-cache, must-revalidate",
     });
     res.end(body);
   } catch {
@@ -617,7 +762,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
     const path = url.pathname;
     const method = req.method ?? "GET";
-    persistMutating = method === "POST" || method === "PATCH" || method === "DELETE";
+    persistMutating = method === "POST" || method === "PATCH" || method === "DELETE" || method === "PUT";
 
     if (LOG_REQUESTS) {
       const origin = req.headers.origin ?? "-";
@@ -715,18 +860,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
     const publicTrainingPdf = path.match(/^\/public\/training\/([^/]+)\/pdf$/);
     if (method === "GET" && publicTrainingPdf) {
-      try {
-        const job = platform.training.getJob(decodeURIComponent(publicTrainingPdf[1]));
-        const publicUrl = `${publicBase(req)}/public/training/${job.id}`;
-        await sendAttendanceSheetPdf(res, job, publicUrl);
-      } catch {
-        sendJson(res, 404, { code: "NotFoundError", message: "training not found" });
-      }
+      sendJson(res, 404, { code: "NotFoundError", message: "attendance download is for signed-in staff" });
       return;
     }
     const joinPage = path.match(/^\/join\/([^/]+)(?:\/([^/]+))?$/);
     if (method === "GET" && joinPage) {
-      await sendWebApp(path, res);
+      try {
+        const job = platform.training.getJobByInviteToken(joinPage[1]);
+        res.writeHead(302, { Location: `/public/training/${job.id}` });
+        res.end();
+      } catch {
+        await sendWebApp(path, res);
+      }
       return;
     }
     if (method === "GET" && path.match(/^\/api\/public\/join\/([^/]+)\/slot\/([^/]+)$/)) {
@@ -767,7 +912,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
     // --- the separate mobile app for Site Engineers / Trainers ---
     if (method === "GET" && (path === "/m" || path === "/m/" || path === "/mobile")) {
-      await sendWebApp(path, res);
+      await sendWebApp("/app/", res);
       return;
     }
     // PWA manifest + service worker so the mobile app installs to the home screen
@@ -786,25 +931,31 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
     if (method === "GET" && path === "/certificate-bg.png") {
       const img = await readFile(join(__dirname, "ui", "certificate-bg.png"));
-      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "max-age=86400" });
+      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable" });
       res.end(img);
       return;
     }
     if (method === "GET" && path === "/certificate-achievement.png") {
       const img = await readFile(join(__dirname, "ui", "certificate-achievement.png"));
-      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "max-age=86400" });
+      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable" });
       res.end(img);
       return;
     }
     if (method === "GET" && path === "/certificate-marks.png") {
       const img = await readFile(join(__dirname, "ui", "certificate-marks.png"));
-      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" });
+      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable" });
+      res.end(img);
+      return;
+    }
+    if (method === "GET" && path === "/certificate-achievement-blank-screen.jpg") {
+      const img = await readFile(join(__dirname, "ui", "certificate-achievement-blank-screen.jpg"));
+      res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=31536000, immutable" });
       res.end(img);
       return;
     }
     if (method === "GET" && path === "/certificate-achievement-blank.png") {
       const img = await readFile(join(__dirname, "ui", "certificate-achievement-blank.png"));
-      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" });
+      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable" });
       res.end(img);
       return;
     }
@@ -961,8 +1112,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       if (b.displayName) user.displayName = String(b.displayName).trim();
       if (b.identifier) user.identifier = String(b.identifier).trim();
       if (b.email !== undefined) user.email = String(b.email).trim() || undefined;
-      if (Array.isArray(b.roleIds)) user.roleIds = b.roleIds;
-      
+      if (Array.isArray(b.roleIds)) {
+        const prev = [...user.roleIds].sort().join(",");
+        platform.users.setRoleIds(user.id, b.roleIds);
+        applyRecordedRoles(user.id, user.roleIds, prev !== [...user.roleIds].sort().join(","));
+      }
       sendJson(res, 200, { ok: true });
       return;
     }
@@ -1059,6 +1213,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           certificates: [],
           invoiceNo: undefined,
         } as TrainingJob;
+      } else {
+        job = TrainingService.forOfficeView(job);
       }
       sendJson(res, 200, job);
       return;
@@ -1234,7 +1390,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         trainingDateTo: b.trainingDateTo,
         trainingTime: b.trainingTime,
         mode: b.mode ?? "Onsite", trainerName: b.trainerName, createdById: userId,
-        address: b.address, trnNo: b.trnNo, contactNameNumber: b.contactNameNumber,
+        address: b.address, directionUrl: b.directionUrl, trnNo: b.trnNo, contactNameNumber: b.contactNameNumber,
         salesPerson: b.salesPerson, standardReference: b.standardReference,
         typeOfTraining: b.typeOfTraining, clientRequirements: b.clientRequirements,
         workStatus: b.workStatus,
@@ -1265,10 +1421,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
 
-    // Edit a job (Training:edit)
+    // Edit a job (Training:edit, or Mapping:edit for mapping protocol data)
     const editMatch = path.match(/^\/api\/training\/([^/]+)$/);
     if (method === "PATCH" && editMatch) {
-      requirePerm(userId, "Training", "edit");
+      const existing = platform.training.getJob(editMatch[1]);
+      if ((existing.serviceType || "Training") === "Mapping") {
+        requireAnyPerm(userId, [["Training", "edit"], ["Mapping", "edit"]]);
+      } else {
+        requirePerm(userId, "Training", "edit");
+      }
       const b = await readBody(req);
       requireAssignedIfFieldUser(userId, editMatch[1]);
       requireEditable(userId, editMatch[1]);
@@ -1351,11 +1512,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           const isActive = u.status === "Active";
           const hasTrainerRole = roles.includes(ROLES.TRAINER);
           const hasSiteEngineerRole = roles.includes(ROLES.SITE_ENGINEER);
-          return isActive && (hasTrainerRole || hasSiteEngineerRole);
+          const hasCoordinatorRole = roles.includes(ROLES.JOB_ASSISTANT);
+          return isActive && (hasTrainerRole || hasSiteEngineerRole || hasCoordinatorRole);
         })
         .map((u) => {
           const roles = platform.permissions.getUserRoleIds(u.id);
-          const roleName = roles.includes(ROLES.TRAINER) ? "Trainer" : "Site Engineer";
+          const roleName = roles.includes(ROLES.TRAINER)
+            ? "Trainer"
+            : roles.includes(ROLES.JOB_ASSISTANT)
+              ? "Certificate Coordinator"
+              : "Site Engineer";
           return {
             id: u.id,
             displayName: u.displayName,
@@ -1414,6 +1580,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       sendJson(res, 200, platform.training.updateAttendee(attendeeEdit[1], attendeeEdit[2], await readBody(req)));
       return;
     }
+    if (method === "DELETE" && attendeeEdit) {
+      requireAddTrainee(userId);
+      requireAssignedIfFieldUser(userId, attendeeEdit[1]);
+      requireEditable(userId, attendeeEdit[1]);
+      platform.training.removeAttendee(attendeeEdit[1], attendeeEdit[2]);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
     if (method === "POST" && path.match(/^\/api\/training\/([^/]+)\/attendance-meta$/)) {
       const jobId = path.split("/")[3];
       if (!canAddTraineeNames(userId)) {
@@ -1457,16 +1631,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         throw new AuthorizationError("This job is not assigned to you");
       }
       const submittedJob = platform.training.submitForApproval(submitMatch[1]);
-      for (const u of platform.users.listUsers()) {
-        const roles = platform.permissions.getUserRoleIds(u.id);
-        if (roles.includes(ROLES.JOB_ASSISTANT)) {
-          platform.training.notifyUser(
-            u.id,
-            `Job ${submittedJob.jobNo} sent for certificates`,
-            submittedJob.id,
-          );
-        }
-      }
+      notifyCertificateRequest(submittedJob, userId);
       sendJson(res, 200, submittedJob);
       return;
     }
@@ -1543,11 +1708,12 @@ async function start(): Promise<void> {
   const restored = await loadPlatformState(platform);
   ensureDemoUsers(platform);
   migrateUserGrants();
+  const rolesSynced = syncStoredRoles();
   const relinked = platform.training.relinkMissingAssignees(platform.users.listUsers());
   if (relinked) {
     console.log(`Re-linked ${relinked} job(s) to current trainer / engineer logins.`);
-    schedulePersist();
   }
+  if (rolesSynced || relinked) schedulePersist();
   if (restored) console.log(`Restored ${restored} job(s) from previous session.`);
   else console.log("No saved jobs yet. New jobs, trainees and certificates are written to disk.");
   server.listen(PORT, "0.0.0.0", () => {

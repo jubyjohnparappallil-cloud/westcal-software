@@ -188,6 +188,10 @@ describe("capturing a trainee from an ID card", () => {
     expect(summary.attachments[0].dataUrl).toBe("");
     expect(stored.attendees[0].photoDataUrl).toBe("data:image/jpeg;base64,BBBB");
     expect(stored.trainerSignature).toBe("data:image/png;base64,DDDD");
+    const office = TrainingService.forOfficeView(stored);
+    expect(office.attendees[0].photoDataUrl).toBe("data:image/jpeg;base64,BBBB");
+    expect(office.attendees[0].idCardDataUrl).toBeUndefined();
+    expect(office.attendees[0].extraPhotoDataUrl).toBeUndefined();
   });
 
   it("rejects a date of birth that is not yyyy-mm-dd", () => {
@@ -277,6 +281,27 @@ describe("reading an Emirates ID", () => {
     expect(parseEmiratesId("IDARE784199512345671<<<<<<<<<<<<<<<").idOrVisaNo).toBe("784-1995-1234567-1");
     expect(parseEmiratesId("784-1995\n1234567-1").idOrVisaNo).toBe("784-1995-1234567-1");
   });
+
+  it("fills name, company and training date from a Westcal ID card", () => {
+    const parsed = parseEmiratesId(
+      [
+        "WESTCAL",
+        "JUBY JOHN YOHANNAN PARAPPALLIL",
+        "VADAKETHIL",
+        "Boom Lift Operator",
+        "Certificate No : WC-TR4544-09",
+        "Company : nbc",
+        "Training Date : 2026-10-05",
+        "Expires on : 2027-10-04",
+        "+971 56 665 4326",
+      ].join("\n")
+    );
+    expect(parsed.name).toMatch(/JUBY JOHN/i);
+    expect(parsed.company.toLowerCase()).toBe("nbc");
+    expect(parsed.trainingDate).toBe("2026-10-05");
+    expect(parsed.course).toMatch(/Boom Lift/i);
+    expect(parsed.mobileNumber).toBe("");
+  });
 });
 
 describe("calibration / testing jobs", () => {
@@ -347,7 +372,7 @@ describe("trainer attendance sheet workflow", () => {
     expect(submitted.authorizedBy).toBe("Trainer One");
   });
 
-  it("reopens a submitted sheet when the trainer replaces an unclear photo", () => {
+  it("keeps a submitted job on the certificate coordinator list when attendance is edited", () => {
     const s = svc();
     const job = s.createJob(jobInput());
     s.assignJob(job.id, "trainer1", "Trainer One");
@@ -369,7 +394,7 @@ describe("trainer attendance sheet workflow", () => {
     s.submitForApproval(job.id);
     const updated = s.updateAttendee(job.id, att.id, { extraPhotoDataUrl: tinyPng(), photoDataUrl: tinyPng() });
     expect(updated.extraPhotoDataUrl).toBe(tinyPng());
-    expect(s.getJob(job.id).status).toBe("In Progress");
+    expect(s.getJob(job.id).status).toBe("Submitted");
   });
 
   it("auto-generates a trainee link so they upload EID and sign themselves", () => {

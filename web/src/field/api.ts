@@ -1,3 +1,4 @@
+import { cachedGet, clearGetCache } from "../lib/getCache";
 import { isJobListRequest, processJobList } from "../lib/fastList.js";
 import type { Session } from "../types";
 
@@ -25,6 +26,13 @@ let session: Session | null = null;
 export const setFieldSession = (s: Session | null) => (session = s);
 
 export async function fapi<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+  if (method !== "GET") clearGetCache();
+  const load = () => fieldRequest<T>(method, path, body);
+  if (method === "GET" && path.startsWith("/api/")) return cachedGet("field " + method + " " + path, load);
+  return load();
+}
+
+async function fieldRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (session) headers.Authorization = "Bearer " + session.token;
   let res: Response;

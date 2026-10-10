@@ -18,6 +18,7 @@ export type PermissionAction =
   | "edit_issued"
   | "documents"
   | "monitor"
+  | "add_rows"
   | "custom";
 
 export interface PermissionDescriptor {

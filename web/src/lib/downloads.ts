@@ -1,21 +1,20 @@
 import { downloadFile } from "../api";
 
-const t = () => `?t=${Date.now()}`;
 const certBase = (jobId: string, certId: string) => `/api/training/${jobId}/certificates/${certId}`;
 
 export const downloads = {
   certificate: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/pdf${t()}`, no + "-certificate.pdf", { noStore: true }),
+    downloadFile(`${certBase(jobId, certId)}/pdf`, no + "-certificate.pdf"),
   certificateNoPhoto: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/nophoto-pdf${t()}`, no + "-certificate-nophoto.pdf", { noStore: true }),
+    downloadFile(`${certBase(jobId, certId)}/nophoto-pdf`, no + "-certificate-nophoto.pdf"),
   certificateLayout: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/layout-pdf${t()}`, no + "-layout.pdf", { noStore: true }),
+    downloadFile(`${certBase(jobId, certId)}/layout-pdf`, no + "-layout.pdf"),
   certificateContent: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/content-pdf${t()}`, no + "-data.pdf", { noStore: true }),
+    downloadFile(`${certBase(jobId, certId)}/content-pdf`, no + "-data.pdf"),
   card: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/card-pdf`, no + "-card.pdf", { failMessage: "Card PDF download failed" }),
   cardLayout: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/card-layout-pdf${t()}`, no + "-card-design.pdf", {
+    downloadFile(`${certBase(jobId, certId)}/card-layout-pdf`, no + "-card-design.pdf", {
       failMessage: "Card design download failed",
     }),
   jobData: (jobId: string, jobNo: string) =>
@@ -25,11 +24,17 @@ export const downloads = {
       failMessage: "Attendance PDF download failed",
     }),
   jobSheet: (jobId: string, jobNo: string) =>
-    downloadFile(`/api/training/${jobId}/job-sheet-pdf`, "WESTCAL-" + jobNo + "-job-sheet.pdf"),
+    downloadFile(
+      `/api/training/${jobId}/job-sheet-pdf`,
+      "WESTCAL-" + String(jobNo || "job").replace(/^WC-/i, "").replace(/[^a-zA-Z0-9_-]/g, "_") + "-training-contract-review-form.pdf",
+    ),
   workPermit: (jobId: string, jobNo: string) =>
     downloadFile(`/api/training/${jobId}/work-permit-pdf`, "WESTCAL-" + jobNo + "-work-permit.pdf"),
   review: (jobId: string, jobNo: string) =>
-    downloadFile(`/api/training/${jobId}/review-pdf`, "WESTCAL-" + jobNo + "-review-form.pdf"),
+    downloadFile(
+      `/api/training/${jobId}/review-pdf`,
+      "WESTCAL-" + String(jobNo || "job").replace(/^WC-/i, "").replace(/[^a-zA-Z0-9_-]/g, "_") + "-training-contract-review-form.pdf",
+    ),
   mappingProtocol: (jobId: string) =>
     downloadFile(`/api/training/${jobId}/protocol`, "mapping-protocol.docx", {
       failMessage: "Protocol download failed",
@@ -48,10 +53,14 @@ export async function copyText(text: string, okMessage: string, promptLabel: str
 
 export function copyPublicLink(jobId: string) {
   const url = location.origin + "/public/training/" + jobId;
-  return copyText("Customer attendance sheet: " + url, "Customer link copied:\n" + url, "Copy this customer link", url);
+  const text =
+    "Westcal training attendance — open this link, upload your Emirates ID, check your details, sign and send:\n" + url;
+  return copyText(text, "Customer attendance link copied.", "Copy this customer link", url);
 }
 
 export function copyTraineeJoin(token: string, editToken?: string) {
   const url = location.origin + "/join/" + token + (editToken ? "/" + editToken : "");
-  return copyText(url, "Send this link to that trainee:\n" + url, "Copy this trainee link");
+  const text =
+    "Westcal training — open this link, check your details, upload your Emirates ID, sign and send:\n" + url;
+  return copyText(text, "Trainee link copied. Send it to that person:\n" + url, "Copy this trainee link", url);
 }

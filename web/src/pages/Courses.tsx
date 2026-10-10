@@ -46,7 +46,7 @@ export function Courses() {
   const [description, setDescription] = useState("");
   const [err, setErr] = useState("");
   const paged = usePaged(data || []);
-  if (loading) return <PageLoading />;
+  if (loading && !data) return <PageLoading />;
   if (error || !data) return <PageError message={error} onRetry={reload} />;
   const courses = data;
 

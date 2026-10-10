@@ -4,6 +4,7 @@ import { useApp } from "../../app-context";
 import { CertificatePreview } from "../../components/CertificatePreview";
 import { Modal } from "../../components/Modal";
 import { Pagination, usePaged } from "../../components/Pagination";
+import { shrinkImage } from "../../field/ocr";
 import { downloads } from "../../lib/downloads";
 import type { Certificate, Job } from "../../types";
 
@@ -19,6 +20,9 @@ function CertDownloads({ j, c, compact }: { j: Job; c: Certificate; compact?: bo
       </button>
       <button className="btn sec sm" onClick={() => downloads.certificateContent(j.id, c.id, no)}>
         Inside data
+      </button>
+      <button className="btn sec sm" onClick={() => downloads.certificateLayout(j.id, c.id, no)}>
+        Certificate design
       </button>
       <button className={"btn sm " + (compact ? "dark" : "sec")} onClick={() => downloads.card(j.id, c.id, no)}>
         ID card
@@ -42,7 +46,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
   return (
     <>
       <p className="hint">
-        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate.
+        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. Print <b>Certificate design</b> first, then print <b>Inside data</b> on that design.
       </p>
       {viewing && (
         <Modal
@@ -82,7 +86,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
                     </td>
                     <td>
                       {c.name}
-                      <div className="muted">{c.company || j.certificateUnder || ""}</div>
+                      <div className="muted">{j.certificateUnder || c.company || ""}</div>
                     </td>
                     <td>{c.course}</td>
                     <td>{c.trainingDate}</td>
@@ -126,14 +130,16 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
 }
 
 function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved: () => void }) {
+  const attendee = (j.attendees || []).find((a) => a.id === c.attendeeId);
   const [f, setF] = useState({
     name: c.name || "",
     idOrVisaNo: c.idOrVisaNo || "",
-    company: c.company || j.certificateUnder || j.customerName || "",
+    certifiedTo: j.certificateUnder || c.company || j.customerName || "",
     course: c.course || "",
     trainingDate: c.trainingDate || "",
     expiresOn: c.expiresOn || "",
   });
+  const [photo, setPhoto] = useState(attendee?.photoDataUrl || "");
   const [err, setErr] = useState("");
   const ref = c.verificationRef ? encodeURIComponent(c.verificationRef) : "";
   const field = (k: keyof typeof f) => ({
@@ -141,11 +147,26 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value }),
   });
 
+  async function onPhoto(file: File | undefined) {
+    if (!file) return;
+    setErr("");
+    try {
+      setPhoto(await shrinkImage(file, 640));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
   async function save() {
     setErr("");
     try {
-      const body = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim()]));
+      const { certifiedTo, ...rest } = f;
+      const body = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, v.trim()]));
       await api("PATCH", `/api/training/${j.id}/certificates/${c.id}`, body);
+      await api("PATCH", `/api/training/${j.id}`, { certificateUnder: certifiedTo.trim() });
+      if (c.attendeeId && photo !== (attendee?.photoDataUrl || "")) {
+        await api("PATCH", `/api/training/${j.id}/attendees/${c.attendeeId}`, { photoDataUrl: photo });
+      }
       onSaved();
     } catch (e) {
       setErr((e as Error).message);
@@ -160,6 +181,34 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
           <div>Scan to verify</div>
         </div>
       )}
+      <div>
+        <label>Photo</label>
+        <div
+          style={{
+            width: 92,
+            height: 122,
+            border: "2px solid #c9a227",
+            background: "#eee",
+            overflow: "hidden",
+          }}
+        >
+          {photo ? (
+            <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 22%" }} />
+          ) : null}
+        </div>
+        <label className="btn sec sm" style={{ marginTop: 8, display: "inline-block" }}>
+          Replace photo
+          <input
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              void onPhoto(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
       <div style={{ flex: 1, minWidth: 240 }}>
         <div className="grid">
           <div className="span-2">
@@ -171,8 +220,8 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
             <input {...field("idOrVisaNo")} />
           </div>
           <div>
-            <label>Company</label>
-            <input {...field("company")} />
+            <label>Certified to</label>
+            <input {...field("certifiedTo")} />
           </div>
           <div className="span-2">
             <label>Course</label>

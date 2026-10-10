@@ -306,6 +306,21 @@
 .field-embed .btn + .btn {
   margin-top: 10px;
 }
+.field-embed .pick-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.field-embed .pick-row .btn,
+.field-embed .pick-row .btn + .btn {
+  flex: 1;
+  min-width: 120px;
+  margin-top: 0;
+  min-height: 48px;
+  padding: 12px 10px;
+  font-size: 15px;
+}
 .field-embed .err {
   color: var(--err);
   font-size: 14px;
@@ -461,8 +476,49 @@
 }
 .field-embed .sheet {
   width: 100%;
-  min-width: 560px;
+  min-width: 0;
   border-collapse: collapse;
+}
+.field-embed .sheet.facts {
+  margin-top: 12px;
+}
+.field-embed .att-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+.field-embed .att-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fbfcfe;
+}
+.field-embed .att-card.dragover {
+  border-color: var(--brand);
+  background: #eaf1ff;
+}
+.field-embed .att-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.field-embed .att-photo {
+  width: 64px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex: none;
+  background: #e8eef6;
+}
+.field-embed .att-photo.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  padding: 6px;
 }
 .field-embed .sheet th, .field-embed .sheet td {
   border: 1px solid var(--line);
@@ -486,8 +542,8 @@
   max-width: 70px;
 }
 .field-embed canvas.rowsig {
-  width: 140px;
-  height: 64px;
+  width: 100%;
+  height: 88px;
   border: 1px dashed #8aa0bc;
   background: #fafafa;
   touch-action: none;
@@ -565,7 +621,7 @@
 }
 .field-embed .jobtabs {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 6px;
   margin-bottom: 14px;
 }

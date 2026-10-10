@@ -50,13 +50,21 @@ function useFieldHead() {
     add("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
     add("meta", { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" });
     document.querySelector('meta[name="viewport"]')?.setAttribute("content", "width=device-width, initial-scale=1, viewport-fit=cover");
-    if (!NATIVE && "serviceWorker" in navigator) navigator.serviceWorker.register("/app/sw.js").catch(() => {});
+    if (!NATIVE && "serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((r) => r.update());
+      });
+      navigator.serviceWorker.register("/app/sw.js?v=34").catch(() => {});
+    }
   }, []);
 }
 
-export function FieldApp() {
+export function FieldApp({ initialSession, onSignOut }: { initialSession?: Session; onSignOut?: () => void } = {}) {
   useFieldHead();
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<Session | null>(() => {
+    if (initialSession) setFieldSession(initialSession);
+    return initialSession ?? null;
+  });
   const [toastMsg, setToastMsg] = useState("");
   const timer = useRef<number>();
   const toast = (msg: string) => {
@@ -66,7 +74,8 @@ export function FieldApp() {
   };
   const signOut = () => {
     setFieldSession(null);
-    setSession(null);
+    if (onSignOut) onSignOut();
+    else setSession(null);
   };
 
   return (
@@ -240,9 +249,11 @@ function Shell({ session, toast, onSignOut }: { session: Session; toast: (m: str
   }
 
   async function reloadOpenJob() {
-    const list = await refresh();
-    if (currentId) await loadFullJob(currentId);
-    return list;
+    if (currentId) {
+      await loadFullJob(currentId);
+      return jobs;
+    }
+    return refresh();
   }
 
   const unread = noti.filter((n) => !n.read).length;
@@ -310,7 +321,7 @@ function JobCard({ j, children }: { j: Job; children?: React.ReactNode }) {
   return (
     <button className="job" onClick={() => openJob(j.id)}>
       <div className="row">
-        <span className="no grow">{j.jobNo}</span>
+        <span className="no grow">{String(j.jobNo || "").replace(/^WC-/i, "")}</span>
         <span className={chipClass(j.status)}>{statusLabel(j.status)}</span>
       </div>
       <div className="cust">{j.customerName}</div>

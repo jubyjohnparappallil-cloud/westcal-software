@@ -95,10 +95,10 @@ export function usePageData<T>(load: () => Promise<T>, deps: unknown[] = []) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let live = true;
-    setState({ loading: true, data: null, error: "" });
+    setState((s) => ({ ...s, loading: !s.data, error: "" }));
     load()
       .then((data) => live && setState({ loading: false, data, error: "" }))
-      .catch((e: Error) => live && setState({ loading: false, data: null, error: e.message }));
+      .catch((e: Error) => live && setState((s) => ({ loading: false, data: s.data, error: e.message })));
     return () => {
       live = false;
     };

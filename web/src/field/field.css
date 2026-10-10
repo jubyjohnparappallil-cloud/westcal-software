@@ -16,16 +16,24 @@
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
 }
-html,
-body {
+html {
   margin: 0;
   padding: 0;
+  overflow-x: clip;
+}
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 body {
   font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: var(--ink);
   background: var(--bg);
-  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
 }
 :focus-visible {
   outline: 3px solid var(--brand);
@@ -314,7 +322,9 @@ textarea {
   background: var(--brand-dark);
 }
 .btn[disabled] {
-  opacity: 0.5;
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 .btn.sec {
   background: #eaeff6;
@@ -333,6 +343,21 @@ textarea {
 }
 .btn + .btn {
   margin-top: 10px;
+}
+.pick-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.pick-row .btn,
+.pick-row .btn + .btn {
+  flex: 1;
+  min-width: 120px;
+  margin-top: 0;
+  min-height: 48px;
+  padding: 12px 10px;
+  font-size: 15px;
 }
 .err {
   color: var(--err);
@@ -378,6 +403,9 @@ textarea {
   gap: 12px;
   margin-top: 12px;
   align-items: flex-start;
+  flex-wrap: wrap;
+  max-width: 100%;
+  min-width: 0;
 }
 .shots figure {
   margin: 0;
@@ -391,14 +419,22 @@ textarea {
   display: block;
   background: #fff;
 }
+.idshot {
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 100%;
+}
 .idshot img {
   width: 100%;
-  max-width: 230px;
+  max-width: 100%;
+  height: auto;
 }
 .portrait img {
   width: 96px;
-  height: 120px;
+  height: 96px;
   object-fit: cover;
+  object-position: center top;
+  border-radius: 8px;
 }
 .scanning {
   display: flex;
@@ -487,15 +523,58 @@ img.sg {
 }
 
 .sheetwrap {
-  overflow-x: auto;
+  overflow: visible;
   border: 1px solid var(--line);
   border-radius: 12px;
   margin-top: 10px;
+  max-width: 100%;
 }
 .sheet {
   width: 100%;
-  min-width: 560px;
+  min-width: 0;
   border-collapse: collapse;
+}
+.sheet.facts {
+  margin-top: 12px;
+}
+.att-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+.att-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fbfcfe;
+}
+.att-card.dragover {
+  border-color: var(--brand);
+  background: #eaf1ff;
+}
+.att-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.att-photo {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  object-position: center top;
+  border-radius: 8px;
+  flex: none;
+  background: #e8eef6;
+}
+.att-photo.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  padding: 6px;
 }
 .sheet th,
 .sheet td {
@@ -520,8 +599,8 @@ img.sg {
   max-width: 70px;
 }
 canvas.rowsig {
-  width: 140px;
-  height: 64px;
+  width: 100%;
+  height: 88px;
   border: 1px dashed #8aa0bc;
   background: #fafafa;
   touch-action: none;
@@ -600,7 +679,7 @@ nav.tabs button[aria-current="page"] {
 }
 .jobtabs {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 6px;
   margin-bottom: 14px;
 }
@@ -652,4 +731,82 @@ nav.tabs button[aria-current="page"] {
   padding: 14px 16px;
   border-radius: 12px;
   font-size: 14px;
+}
+
+input,
+select,
+textarea,
+.btn,
+.card,
+.job-block {
+  max-width: 100%;
+}
+
+@media (max-width: 700px) {
+  main {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .wc-top {
+    flex-wrap: wrap;
+  }
+  .sheetwrap {
+    overflow: visible;
+    border: 0;
+  }
+  .sheet.facts {
+    display: block;
+    width: 100%;
+  }
+  .sheet.facts tbody,
+  .sheet.facts tr {
+    display: block;
+    width: 100%;
+  }
+  .sheet.facts td {
+    display: block;
+    width: 100%;
+  }
+  .sheet.facts td:first-child {
+    background: #f4f7fb;
+    border-bottom: 0;
+    padding-bottom: 2px;
+  }
+  .sheet:not(.facts) thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .sheet:not(.facts),
+  .sheet:not(.facts) tbody {
+    display: block;
+    width: 100%;
+  }
+  .sheet:not(.facts) tr {
+    display: block;
+    width: 100%;
+    margin: 0 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .sheet:not(.facts) td {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .sheet:not(.facts) td:last-child {
+    border-bottom: 0;
+  }
+  canvas.rowsig {
+    width: 100%;
+    height: 88px;
+  }
+  .attacts .btn {
+    flex: 1 1 calc(50% - 6px);
+  }
 }

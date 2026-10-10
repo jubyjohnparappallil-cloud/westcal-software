@@ -36,6 +36,8 @@ export function permissions(session: Session) {
   const canChangeJob = (status: string) =>
     isSuper() || (!CLOSED_STATUSES.includes(status) && (!ISSUED_STATUSES.includes(status) || has("Training:edit_issued")));
   const canCreateAny = () => has("Training:create") || SERVICES.some((s) => canCreateService(s.id));
+  const canAddMappingRows = () => isSuper() || has("Mapping:add_rows");
+  const canEditMapping = () => isSuper() || has("Mapping:edit") || has("Training:edit");
 
   return {
     has,
@@ -62,6 +64,8 @@ export function permissions(session: Session) {
     canCancelJob,
     canChangeJob,
     canCreateAny,
+    canAddMappingRows,
+    canEditMapping,
   };
 }
 

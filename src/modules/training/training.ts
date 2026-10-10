@@ -28,7 +28,7 @@ const CANCELLABLE: TrainingStatus[] = ["Created", "Assigned"];
 export type TrainingMode = "Online" | "Onsite" | "Offsite";
 
 /** Roles that a job can be assigned to and that see it in "My assigned jobs". */
-export type AssigneeRole = "Trainer" | "Site Engineer";
+export type AssigneeRole = "Trainer" | "Site Engineer" | "Certificate Coordinator";
 
 /** The four Westcal services. Training is managed/scheduled like the others. */
 export type ServiceType = "Calibration" | "Inspection" | "Testing" | "Training" | "Mapping";
@@ -193,6 +193,8 @@ export interface TrainingJob {
   status: TrainingStatus;
   // job-form fields captured at creation
   address?: string;
+  /** Google Maps link opened by the trainer Direction button. */
+  directionUrl?: string;
   trnNo?: string;
   contactNameNumber?: string;
   salesPerson?: string;
@@ -405,10 +407,7 @@ function attendeeCertificateCourse(job: TrainingJob, requested?: string): string
   const single = asked && !asked.includes(" · ") ? asked : "";
   if (single && (!allowed.length || allowed.includes(single))) return single;
   if (allowed.length === 1) return allowed[0];
-  if (allowed.length > 1) {
-    throw new ValidationError("select one training course for this trainee", "course");
-  }
-  return single;
+  return "";
 }
 
 export interface CreateTrainingInput {
@@ -431,6 +430,7 @@ export interface CreateTrainingInput {
   createdById: string;
   // extra job-form fields (from the hardcopy Work Permit / Contract Review)
   address?: string;
+  directionUrl?: string;
   trnNo?: string;
   contactNameNumber?: string;
   salesPerson?: string;
@@ -617,7 +617,8 @@ export class TrainingService {
   constructor(
     private readonly codes: DocumentCodes,
     private readonly isTrainer: (userId: string) => boolean,
-    private readonly isSiteEngineer: (userId: string) => boolean = () => false
+    private readonly isSiteEngineer: (userId: string) => boolean = () => false,
+    private readonly isCertificateCoordinator: (userId: string) => boolean = () => false
   ) {}
 
   exportSnapshot(): TrainingSnapshot {
@@ -653,6 +654,7 @@ export class TrainingService {
   /** Which assignable role a user holds, or undefined if they hold neither. */
   private assigneeRoleOf(userId: string): AssigneeRole | undefined {
     if (this.isTrainer(userId)) return "Trainer";
+    if (this.isCertificateCoordinator(userId)) return "Certificate Coordinator";
     if (this.isSiteEngineer(userId)) return "Site Engineer";
     return undefined;
   }
@@ -765,6 +767,7 @@ export class TrainingService {
       trainerName: input.trainerName ?? "",
       status: "Created",
       address: input.address,
+      directionUrl: String(input.directionUrl ?? "").trim(),
       trnNo: input.trnNo,
       contactNameNumber: input.contactNameNumber,
       salesPerson: input.salesPerson,
@@ -839,6 +842,9 @@ export class TrainingService {
     const j = this.jobs.get(id);
     if (!j) throw new NotFoundError("training job not found");
     if (!j.traineeInviteToken) j.traineeInviteToken = newId();
+    for (const a of j.attendees) {
+      if (!a.editToken) a.editToken = newId();
+    }
     if (!j.companies || !j.companies.length) j.companies = jobCompanyList(j);
     if (!j.trainingDateTo) j.trainingDateTo = j.trainingDate;
     return j;
@@ -857,6 +863,7 @@ export class TrainingService {
     const marked = job.attendees.length;
     const remaining = expected ? Math.max(0, expected - marked) : 0;
     return {
+      jobId: job.id,
       course: job.course,
       customerName: job.customerName,
       trainingDate: job.trainingDate,
@@ -910,6 +917,7 @@ export class TrainingService {
       trainingTime: patch.trainingTime ?? job.trainingTime,
       mode: patch.mode ?? job.mode,
       address: patch.address ?? job.address,
+      directionUrl: patch.directionUrl !== undefined ? String(patch.directionUrl).trim() : job.directionUrl,
       trnNo: patch.trnNo ?? job.trnNo,
       contactNameNumber: patch.contactNameNumber ?? job.contactNameNumber,
       salesPerson: patch.salesPerson ?? job.salesPerson,
@@ -1042,6 +1050,21 @@ export class TrainingService {
     };
   }
 
+  /** Office job page: keep face photos, drop Emirates ID scans and other bulky files. */
+  static forOfficeView(job: TrainingJob): TrainingJob {
+    const light = TrainingService.summarizeJob(job);
+    light.trainerSignature = job.trainerSignature;
+    light.attendees = job.attendees.map((a) => ({
+      ...a,
+      photoDataUrl: a.photoDataUrl,
+      extraPhotoDataUrl: undefined,
+      idCardDataUrl: undefined,
+      hasIdCard: !!(a.idCardDataUrl),
+      signature: a.signature,
+    }));
+    return light;
+  }
+
   findCertificateByVerificationRef(
     verificationRef: string
   ): { job: TrainingJob; certificate: TrainingCertificate } | undefined {
@@ -1091,7 +1114,7 @@ export class TrainingService {
     }
     const role = this.assigneeRoleOf(assigneeId);
     if (!role) {
-      throw new ValidationError("assignee must be a Trainer or Site Engineer", "assigneeId");
+      throw new ValidationError("assignee must be a Trainer, Certificate Coordinator, or Site Engineer", "assigneeId");
     }
     job.assignedToId = assigneeId;
     job.assigneeName = assigneeName;
@@ -1216,9 +1239,9 @@ export class TrainingService {
     const fromList = (fetched.courses ?? []).map((name) => String(name ?? "").trim()).filter(Boolean);
     const raw = fromList.length ? fromList : [String(fetched.course ?? "").trim()].filter(Boolean);
     const fallback = !raw.length && jobCourseList(job.course).length === 1 ? jobCourseList(job.course) : raw;
-    const courseNames = [...new Set(fallback.map((name) => attendeeCertificateCourse(job, name)))];
+    const courseNames = [...new Set(fallback.map((name) => attendeeCertificateCourse(job, name)).filter(Boolean))];
     if (!courseNames.length) {
-      throw new ValidationError("select at least one training course for this trainee", "course");
+      throw new ValidationError("Tick the training course for this trainee", "course");
     }
     if (job.expectedTraineeCount && job.attendees.length + courseNames.length > job.expectedTraineeCount) {
       job.expectedTraineeCount = job.attendees.length + courseNames.length;
@@ -1489,10 +1512,22 @@ export class TrainingService {
     job.updatedAt = new Date();
     if (job.status === "Approved" || job.status === "Issued") {
       this.refreshIssuedCertificates(job, { attendeeId: attendee.id });
-    } else if (job.status === "Submitted" || job.status === "Rejected") {
+    } else if (job.status === "Rejected") {
       job.status = "In Progress";
     }
     return attendee;
+  }
+
+  removeAttendee(jobId: string, attendeeId: string): void {
+    const job = this.getJob(jobId);
+    if (job.status === "Cancelled" || job.status === "Closed") {
+      throw new ConflictError("this job cannot be changed", "status");
+    }
+    const i = job.attendees.findIndex((a) => a.id === attendeeId);
+    if (i < 0) throw new NotFoundError("attendee not found");
+    job.attendees.splice(i, 1);
+    job.updatedAt = new Date();
+    if (job.status === "Rejected") job.status = "In Progress";
   }
 
   /** Trainer submits the completed job for admin approval. */

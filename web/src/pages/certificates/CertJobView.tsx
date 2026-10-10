@@ -58,17 +58,14 @@ export function CertJobView(props: {
             )}
             {perms.canDownload() && (
               <>
-                <button className="btn dark sm" onClick={() => downloads.jobSheet(j.id, fileNo)}>
-                  Job card PDF
+                <button className="btn dark sm" onClick={() => downloads.jobSheet(j.id, j.jobNo)}>
+                  Training contract review PDF
                 </button>
                 <button className="btn dark sm" onClick={() => downloads.jobData(j.id, fileNo)}>
                   Submitted data PDF
                 </button>
                 <button className="btn dark sm" onClick={() => downloads.workPermit(j.id, fileNo)}>
                   Work permit PDF
-                </button>
-                <button className="btn dark sm" onClick={() => downloads.review(j.id, fileNo)}>
-                  Review form PDF
                 </button>
               </>
             )}

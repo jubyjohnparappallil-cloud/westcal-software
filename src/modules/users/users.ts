@@ -95,6 +95,17 @@ export class UsersService {
     u.updatedAt = new Date();
   }
 
+  /** Change this person's roles. Permission grants are synced by the API layer. */
+  setRoleIds(id: string, roleIds: string[]): UserRecord {
+    const u = this.getUser(id);
+    if (!roleIds || roleIds.length < 1) {
+      throw new ValidationError("at least one role is required", "roleIds");
+    }
+    u.roleIds = [...roleIds];
+    u.updatedAt = new Date();
+    return u;
+  }
+
   hasIdentifier(identifier: string): boolean {
     return this.byIdentifier.has(identifier);
   }

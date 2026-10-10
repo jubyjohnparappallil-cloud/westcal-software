@@ -90,7 +90,7 @@ const PERIODS: [string, string][] = [
 
 export function Reports() {
   const { nav, go, perms, goToCertificates } = useApp();
-  const { loading, data } = usePageData(() => api<Job[]>("GET", "/api/training"));
+  const { data } = usePageData(() => api<Job[]>("GET", "/api/training"));
   const [period, setPeriod] = useState("monthly");
   const [refDate, setRefDate] = useState(isoToday());
   const status = STATUS_TABS.some(([id]) => id === nav.reportStatus) ? nav.reportStatus : "all";
@@ -98,7 +98,7 @@ export function Reports() {
   const [customer, setCustomer] = useState("");
   const [trainer, setTrainer] = useState("");
   const [search, setSearch] = useState("");
-  if (loading || !data) return <PageLoading label="Loading reports…" />;
+  if (!data) return <PageLoading label="Loading reports…" />;
 
   const training = newestFirst(data.filter((j) => (j.serviceType || "Training") === "Training"));
   const inStatus = (j: Job, id: string) => STATUS_TABS.find(([t]) => t === id)?.[2](j) ?? true;

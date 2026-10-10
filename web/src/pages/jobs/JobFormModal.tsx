@@ -106,6 +106,7 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
   const [f, setF] = useState({
     customer: job?.customerName || "",
     addr: job?.address || "",
+    direction: job?.directionUrl || "",
     location: job?.location || "On-site",
     time: job?.trainingTime || "",
     dateFrom: job?.trainingDate || "",
@@ -132,13 +133,15 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
         ? []
         : [newLine()],
   );
-  const [codeTraining, setCodeTraining] = useState(job ? job.workCodeTraining !== false : training);
-  const [codeCertification, setCodeCertification] = useState(job ? !!job.workCodeCertification : !training);
+  const [codeTraining] = useState(job ? job.workCodeTraining !== false : training);
+  const [codeCertification] = useState(job ? !!job.workCodeCertification : !training);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const bind = (k: keyof typeof f) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setF({ ...f, [k]: e.target.value });
-  const people = loaded.assignees.filter((a) => a.roleName === (training ? "Trainer" : "Site Engineer"));
+  const people = loaded.assignees.filter((a) =>
+    training ? a.roleName === "Trainer" || a.roleName === "Certificate Coordinator" : a.roleName === "Site Engineer",
+  );
   const allCourses = courseNames(courses);
 
   function syncCertifiedTo(list: string[]) {
@@ -220,7 +223,7 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
           : "Please type the scope of work.",
       );
     if (!editId && !assignee)
-      return setErr(training ? "Assign a trainer. Add one under Add trainers if the list is empty." : "Assign a site engineer.");
+      return setErr(training ? "Assign a trainer or certificate coordinator." : "Assign a site engineer.");
     if (training && !certifiedTo.trim()) return setErr("Certified to is required. It is the name printed on the certificate.");
     if (!editId && !training && lineItems().length < 1)
       return setErr("Add at least one equipment line item (description), then create the job.");
@@ -232,6 +235,7 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
       companies: training ? companies.slice() : undefined,
       certificateUnder: training ? certifiedTo.trim() : undefined,
       address,
+      directionUrl: f.direction.trim(),
       contactNameNumber: f.contact.trim(),
       trainingDate: f.dateFrom,
       trainingDateTo: f.dateTo,
@@ -347,6 +351,14 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
               <option>Off-site</option>
             </select>
           </div>
+          <div className="span-2">
+            <label>Direction</label>
+            <input
+              value={f.direction}
+              placeholder="Paste the Google Maps link for this site"
+              onChange={bind("direction")}
+            />
+          </div>
           <div>
             <label>Start time *</label>
             <input type="time" value={f.time} onChange={bind("time")} />
@@ -381,16 +393,16 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
             <input value={f.contact} placeholder="Name and mobile" onChange={bind("contact")} />
           </div>
           <div className="span-2">
-            <label>Assign {training ? "trainer" : "site engineer"} *</label>
+            <label>Assign {training ? "trainer or certificate coordinator" : "site engineer"} *</label>
             <select value={f.assignee} onChange={bind("assignee")}>
-              <option value="">{training ? "Choose trainer *" : "Choose site engineer *"}</option>
+              <option value="">{training ? "Choose trainer or certificate coordinator *" : "Choose site engineer *"}</option>
               {people.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.displayName} — {a.roleName}
                 </option>
               ))}
             </select>
-            {people.length === 0 && <div className="muted">No {training ? "trainers" : "site engineers"} added yet.</div>}
+            {people.length === 0 && <div className="muted">No {training ? "trainers or certificate coordinators" : "site engineers"} added yet.</div>}
           </div>
         </div>
       </div>
@@ -488,15 +500,6 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
         <button className="btn sec sm" style={{ marginTop: 10 }} onClick={() => setLines([...lines, newLine()])}>
           + Add line item
         </button>
-        <div style={{ marginTop: 16 }}>
-          <label>Work codes</label>
-          <label className="checkline">
-            <input type="checkbox" checked={codeTraining} onChange={(e) => setCodeTraining(e.target.checked)} /> Training
-          </label>
-          <label className="checkline" style={{ marginLeft: 20 }}>
-            <input type="checkbox" checked={codeCertification} onChange={(e) => setCodeCertification(e.target.checked)} /> Certification
-          </label>
-        </div>
         {training && (
           <div style={{ marginTop: 14 }}>
             <label>Description</label>

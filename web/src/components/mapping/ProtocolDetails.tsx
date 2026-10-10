@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../../api";
+import { useApp } from "../../app-context";
 import { downloads } from "../../lib/downloads";
 import type { Job } from "../../types";
 import {
@@ -34,6 +35,8 @@ export function ProtocolDetails({ job, editable, onSaved }: { job: Job; editable
 }
 
 function ProtocolDetailsForm({ job, defaults, onSaved }: { job: Job; defaults: Protocol; onSaved: () => void }) {
+  const { perms } = useApp();
+  const allowAddRows = perms.canAddMappingRows();
   const season = splitSeason(job.seasonYear || "");
   const [ranges, setRanges] = useState<RangeValues>({
     tempRange: normalizeTempRange(job.mappingRange || ""),
@@ -91,7 +94,7 @@ function ProtocolDetailsForm({ job, defaults, onSaved }: { job: Job; defaults: P
       </div>
       <ProtocolFields p={p} set={set} onPreview={() => setPreview(true)} />
       <LayoutUpload sheets={sheets} setSheets={setSheets} />
-      <ProtocolSheetsEditor sheets={sheets} setSheets={setSheets} logger={p.logger_name || "Tempnix"} />
+      <ProtocolSheetsEditor sheets={sheets} setSheets={setSheets} logger={p.logger_name || "Tempnix"} allowAddRows={allowAddRows} />
       <p style={{ marginTop: 10 }}>
         <button className="btn sec sm" disabled={busy} onClick={() => save(false)}>
           Save protocol details
@@ -101,7 +104,9 @@ function ProtocolDetailsForm({ job, defaults, onSaved }: { job: Job; defaults: P
         </button>
       </p>
       <div className="err">{err}</div>
-      {preview && <ProtocolPreview p={p} set={set} sheets={sheets} setSheets={setSheets} onClose={() => setPreview(false)} />}
+      {preview && (
+        <ProtocolPreview p={p} set={set} sheets={sheets} setSheets={setSheets} allowAddRows={allowAddRows} onClose={() => setPreview(false)} />
+      )}
     </div>
   );
 }

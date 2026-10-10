@@ -26,7 +26,7 @@ export function Users() {
     .map(({ u }) => u);
   const paged = usePaged(newestFirst, newestFirst.length);
 
-  if (loading) return <PageLoading />;
+  if (loading && !data) return <PageLoading />;
   if (error || !data) return <PageError message={error} onRetry={reload} />;
   const users = data;
 

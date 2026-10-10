@@ -32,10 +32,9 @@ function dataUrlBuffer(dataUrl: string): Buffer {
   return Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
 }
 
+/** Job number printed on the attendance sheet: the real job number, without the WC- prefix. */
 export function sheetJobNo(job: TrainingJob): string {
-  const raw = job.jobOrderNo || job.jobNo || "";
-  const digits = String(raw).replace(/\D/g, "");
-  return digits || String(raw);
+  return String(job.jobNo || job.jobOrderNo || "").replace(/^WC-/i, "");
 }
 
 function courseCode(job: TrainingJob): string {
@@ -70,6 +69,7 @@ function traineeRow(job: TrainingJob, a: TrainingJob["attendees"][number], i: nu
       <b>${html(a.name)}</b><br>
       <span class="sub">EID: ${html(a.idOrVisaNo || "-")}</span><br>
       <span class="sub">Training Date: ${html(formatDob(job.trainingDate))}</span><br>
+      <span class="sub">Company: ${html(a.company || job.customerName || "-")}</span><br>
       <span class="sub">Certified to: ${html(String(job.certificateUnder ?? "").trim() || a.company || job.customerName)}</span><br>
       <span class="sub">Course: ${html(course)}</span>
     </td>
@@ -144,7 +144,6 @@ export function attendancePublicHtml(job: TrainingJob, publicUrl: string): strin
       <tbody>${rows}</tbody>
     </table>
     <div class="count">Trainees: ${job.attendees.length}${job.expectedTraineeCount ? " / " + job.expectedTraineeCount : ""}</div>
-    <p><a class="dl" href="/public/training/${html(job.id)}/pdf">Download attendance sheet</a></p>
     ${job.trainerVerified ? `<p><b>Attendance verified by trainer</b></p>` : ""}
     ${job.trainerSignature ? `<p>Authorized by: ${html(job.authorizedBy || job.assigneeName || job.trainerName || "")}<br><img src="${job.trainerSignature}" alt="authorized by" style="height:42px"></p>` : ""}
     <div class="link">Public link: ${html(publicUrl)}</div>
@@ -263,15 +262,16 @@ export async function sendAttendanceSheetPdf(
   job.attendees.forEach((a, i) => {
     if (doc.y > 700) doc.addPage();
     const y = doc.y;
-    const rowH = 88;
+    const rowH = 102;
     doc.rect(36, y, 523, rowH).stroke("#bbb");
-    doc.fillColor("#111").font("Helvetica").fontSize(10).text(String(i + 1), 42, y + 10, { width: 24 });
-    doc.font("Helvetica-Bold").text(a.name, 70, y + 8, { width: 250 });
+    doc.fillColor("#111").font("Helvetica").fontSize(10).text(String(i + 1), 42, y + 8, { width: 24 });
+    doc.font("Helvetica-Bold").text(a.name, 70, y + 6, { width: 250 });
     doc.font("Helvetica").fontSize(9).fillColor("#444")
-      .text(`EID: ${a.idOrVisaNo || "-"}`, 70, y + 24, { width: 250 })
-      .text(`Training date: ${formatDob(job.trainingDate)}`, 70, y + 36, { width: 250 })
-      .text(`Certified to: ${String(job.certificateUnder ?? "").trim() || a.company || job.customerName}`, 70, y + 48, { width: 250 })
-      .text(a.course || job.course || "", 70, y + 60, { width: 250, height: 22, ellipsis: true });
+      .text(`EID: ${a.idOrVisaNo || "-"}`, 70, y + 22, { width: 250 })
+      .text(`Training date: ${formatDob(job.trainingDate)}`, 70, y + 34, { width: 250 })
+      .text(`Company: ${a.company || job.customerName || "-"}`, 70, y + 46, { width: 250 })
+      .text(`Certified to: ${String(job.certificateUnder ?? "").trim() || a.company || job.customerName}`, 70, y + 58, { width: 250 })
+      .text(a.course || job.course || "", 70, y + 70, { width: 250, height: 22, ellipsis: true });
     const photo = traineePhoto(a);
     if (photo) {
       try { doc.image(dataUrlBuffer(photo), 338, y + 8, { fit: [54, 62] }); } catch { /* skip */ }

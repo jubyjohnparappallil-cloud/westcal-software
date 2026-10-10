@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
-import { cropPortrait, formatEidLocal, ocrEmiratesCard } from "../field/ocr";
+import { formatEidLocal, ocrEmiratesCard, prepareIdPhoto } from "../field/ocr";
 import { jobCompanyNames, jobCourses, normalizeEid } from "../lib/jobs";
 import type { Job } from "../types";
 import { IdDropZone } from "./TraineeEditor";
@@ -23,17 +23,22 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function readCard(idCardDataUrl: string) {
-    const photoDataUrl = (await cropPortrait(idCardDataUrl)) || undefined;
+  async function readCard(file: File) {
+    const { card, portrait, ocrCard } = await prepareIdPhoto(file);
     let text = "";
     let fetched: Record<string, string> = {};
     try {
-      text = await ocrEmiratesCard([idCardDataUrl]);
+      text = await ocrEmiratesCard([ocrCard]);
       if (text.trim()) fetched = await api("POST", `/api/training/${j.id}/id-fetch`, { ocrText: text });
     } catch {
-      // unreadable card: the office types the details
+      /* office types the details */
     }
-    setCard({ idCardDataUrl, photoDataUrl, nationality: fetched.nationality, dateOfBirth: fetched.dateOfBirth });
+    setCard({
+      idCardDataUrl: card,
+      photoDataUrl: portrait || card,
+      nationality: fetched.nationality,
+      dateOfBirth: fetched.dateOfBirth,
+    });
     setF((x) => ({
       ...x,
       name: x.name || fetched.name || "",
@@ -146,7 +151,7 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
       {mode === "one" ? (
         <>
           <p className="hint">Drop the Emirates ID card to fill the details, or type them.</p>
-          <IdDropZone current={card?.idCardDataUrl} onImage={readCard} />
+          <IdDropZone current={card?.idCardDataUrl} onFile={readCard} />
           <div className="grid">
             <div>
               <label>Name *</label>

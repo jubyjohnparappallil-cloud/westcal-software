@@ -13,9 +13,18 @@ export const CERTIFICATE_BG = join(__dirname, "..", "..", "ui", "certificate-bg.
 export const CERTIFICATE_ACHIEVEMENT = join(__dirname, "..", "..", "ui", "certificate-achievement.png");
 export const CERTIFICATE_ACHIEVEMENT_BLANK = join(__dirname, "..", "..", "ui", "certificate-achievement-blank.png");
 export const CERTIFICATE_ACHIEVEMENT_BLANK_HD = join(__dirname, "..", "..", "ui", "certificate-achievement-blank-hd.png");
+export const CERTIFICATE_ACHIEVEMENT_BLANK_PRINT = join(__dirname, "..", "..", "ui", "certificate-achievement-blank-print.jpg");
 export const CERTIFICATE_DESIGNS_DIR = join(__dirname, "..", "..", "ui", "certificates");
 const LOGO = join(__dirname, "..", "..", "ui", "logo.jpg");
 const CERTIFICATE_MARKS = join(__dirname, "..", "..", "ui", "certificate-marks.png");
+const marksPng = (() => {
+  try {
+    return readFileSync(CERTIFICATE_MARKS);
+  } catch {
+    return null;
+  }
+})();
+let artworkCache: Promise<Buffer | null> | null = null;
 
 export const BUILTIN_CERTIFICATE_DESIGNS = [
   { id: "achievement", name: "Westcal Achievement", preview: "/certificate-achievement.png" },
@@ -47,6 +56,34 @@ function dataUrlBuffer(dataUrl: string): Buffer {
   return Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
 }
 
+function imagePixelSize(buf: Buffer): { w: number; h: number } | null {
+  if (buf.length > 24 && buf[0] === 0x89 && buf[1] === 0x50) {
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  }
+  if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let o = 2;
+    while (o < buf.length - 8) {
+      if (buf[o] !== 0xff) { o++; continue; }
+      const marker = buf[o + 1];
+      if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+        return { h: buf.readUInt16BE(o + 5), w: buf.readUInt16BE(o + 7) };
+      }
+      const len = buf.readUInt16BE(o + 2);
+      if (!len) break;
+      o += 2 + len;
+    }
+  }
+  return null;
+}
+
+/** KHDA and ISO marks belong on the printed design, not on the data sheet. */
+function drawCertificateMarks(doc: PdfDoc): void {
+  if (!marksPng) return;
+  const pageW = 595.28;
+  const pageH = 841.89;
+  doc.image(marksPng, pageW * 0.36, pageH * 0.852, { width: pageW * 0.24 });
+}
+
 type PdfDoc = InstanceType<typeof PDFDocument>;
 type CertSlots = ReturnType<typeof certificateSlots>;
 
@@ -71,18 +108,21 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
     authorizedBy: job.authorizedBy || job.assigneeName || job.trainerName || "",
     authorizedSignature: job.trainerSignature || "",
     traineeSignature: trainee?.signature || "",
-    photoDataUrl: trainee?.extraPhotoDataUrl || trainee?.photoDataUrl || "",
+    photoDataUrl: trainee?.photoDataUrl || trainee?.extraPhotoDataUrl || "",
     qrDataUrl: c.qrDataUrl || "",
     design: "achievement",
   };
 }
 
 async function loadCertificateArtwork(): Promise<Buffer | null> {
-  return readFile(CERTIFICATE_ACHIEVEMENT_BLANK).catch(
-    () => readFile(CERTIFICATE_ACHIEVEMENT_BLANK_HD).catch(
-      () => readFile(CERTIFICATE_ACHIEVEMENT).catch(() => null)
-    )
-  );
+  if (!artworkCache) {
+    artworkCache = readFile(CERTIFICATE_ACHIEVEMENT_BLANK_HD).catch(() =>
+      readFile(CERTIFICATE_ACHIEVEMENT_BLANK).catch(() =>
+        readFile(CERTIFICATE_ACHIEVEMENT_BLANK_PRINT).catch(() => readFile(CERTIFICATE_ACHIEVEMENT).catch(() => null)),
+      ),
+    );
+  }
+  return artworkCache;
 }
 
 function isAchievementDesign(design: string): boolean {
@@ -180,26 +220,26 @@ export function printedCertificateVerifyHtml(c: TrainingCertificate, job: Traini
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 .page{min-height:100dvh;display:flex;align-items:flex-start;justify-content:center;padding:8px 0}
-.west-cert{position:relative;width:min(720px,100vw);aspect-ratio:210/297;background:#fff url(/certificate-achievement-blank.png?v=20260928d) center/100% 100% no-repeat;overflow:hidden;text-align:center;font-family:"Times New Roman",Times,serif;color:#16325c;container-type:inline-size}
-.cert-photo{position:absolute;right:13%;top:54.2%;width:12%;aspect-ratio:1;height:auto;overflow:hidden;border:2px solid #c9a227;background:#eee;z-index:2}
-.cert-photo img{position:absolute;top:0;left:-12.5%;width:125%;height:182%;object-fit:cover;object-position:center top;display:block}
-.cert-marks{position:absolute;left:38%;top:79.6%;width:19%;height:auto;z-index:2;pointer-events:none}
-.cert-name{position:absolute;left:8%;right:28%;top:54.6%;text-align:center;font-weight:700;font-size:2.15cqi;text-transform:uppercase;white-space:nowrap;line-height:1;color:#16325c}
+.west-cert{position:relative;width:min(720px,100vw);aspect-ratio:210/297;background:#fff url(/certificate-achievement-blank-screen.jpg?v=20261009fast) center/100% 100% no-repeat;overflow:hidden;text-align:center;font-family:"Times New Roman",Times,serif;color:#16325c;container-type:inline-size}
+.cert-photo{position:absolute;right:15.5%;top:52.4%;width:11%;aspect-ratio:3/4;height:auto;overflow:hidden;border:2px solid #c9a227;background:#eee;z-index:2}
+.cert-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 22%;display:block}
+.cert-marks{position:absolute;left:36%;top:85.2%;width:24%;height:auto;object-fit:contain;z-index:2;pointer-events:none}
+.cert-name{position:absolute;left:8%;right:30%;top:54.6%;text-align:center;font-weight:700;font-size:2.15cqi;text-transform:uppercase;white-space:nowrap;line-height:1;color:#16325c}
 .cert-rule{position:absolute;left:32%;width:18%;top:57.4%;border:0;border-top:1px solid #222;margin:0}
-.lead{position:absolute;left:10%;right:28%;top:58.4%;text-align:center;font-style:italic;font-weight:700;font-size:1.45cqi;color:#16325c;white-space:nowrap}
-.cert-course{position:absolute;left:8%;right:28%;top:62.2%;text-align:center;font-weight:700;font-size:2cqi;text-transform:uppercase;color:#16325c;white-space:nowrap}
+.lead{position:absolute;left:10%;right:30%;top:58.4%;text-align:center;font-style:italic;font-weight:700;font-size:1.45cqi;color:#16325c;white-space:nowrap}
+.cert-course{position:absolute;left:8%;right:30%;top:62.2%;text-align:center;font-weight:700;font-size:2cqi;text-transform:uppercase;color:#16325c;white-space:nowrap}
 .meta-col{position:absolute;top:68.2%;font-weight:700;font-size:1.45cqi;color:#16325c;text-align:left;line-height:1.85}
 .meta-left{left:14%}
 .meta-right{left:54%}
 .meta-col span{display:inline-block;min-width:13.5cqi}
-.auth{position:absolute;left:15%;top:77%;width:30%;text-align:left;font-weight:700;font-style:italic;letter-spacing:.8px;font-size:1.6cqi}
-.contact{position:absolute;left:9%;top:85.6%;width:28%;text-align:left;font-weight:700;font-size:1.12cqi;line-height:1.15;color:#16325c}
-.qr{position:absolute;right:32%;top:76.4%;width:10%;background:#fff;padding:2px;box-sizing:border-box;z-index:2}
+.auth{position:absolute;left:15%;top:77%;width:22%;text-align:left;font-weight:700;font-style:italic;letter-spacing:.8px;font-size:1.6cqi}
+.contact{position:absolute;left:9%;top:84.8%;width:24%;text-align:left;font-weight:700;font-size:1.12cqi;line-height:1.15;color:#16325c}
+.qr{position:absolute;right:28%;top:76.4%;width:10%;background:#fff;padding:2px;box-sizing:border-box;z-index:2}
 .qr img{width:100%;height:auto;display:block;background:#fff}
 </style></head><body>
 <div class="page"><div class="west-cert">
   ${photo}
-  <img class="cert-marks" src="/certificate-marks.png?v=20260928e" alt="">
+  <img class="cert-marks" src="/certificate-marks.png?v=20261007m" alt="KHDA permit">
   <div class="cert-name">${esc(s.name)}</div>
   <hr class="cert-rule">
   <div class="lead">has successfully completed one day safety training for</div>
@@ -249,16 +289,39 @@ function drawPrintedCertificate(
   }
 
   if (!hidePhoto) {
-    const photoX = px(576);
-    const photoY = py(555);
-    const photoW = px(92);
-    const photoH = photoW;
+    const photoX = px(564);
+    const photoY = py(536);
+    const photoW = px(84);
+    const photoH = photoW * (4 / 3);
     doc.save();
     doc.rect(photoX, photoY, photoW, photoH).clip();
     if (s.photoDataUrl) {
       try {
         const buf = dataUrlBuffer(s.photoDataUrl);
-        doc.image(buf, photoX - photoW * 0.125, photoY, { width: photoW * 1.25, height: photoH / 0.55 });
+        const size = imagePixelSize(buf);
+        const idCard = size && size.w > size.h * 1.15;
+        if (idCard && size) {
+          const fx = 0.086;
+          const fy = 0.335;
+          const fw = 0.184;
+          const fh = 0.348;
+          const regionW = size.w * fw;
+          const regionH = size.h * fh;
+          const scale = Math.max(photoW / regionW, photoH / regionH);
+          doc.image(buf, photoX - fx * size.w * scale + (photoW - regionW * scale) / 2, photoY - fy * size.h * scale + (photoH - regionH * scale) / 2, {
+            width: size.w * scale,
+            height: size.h * scale,
+          });
+        } else {
+          const img = doc.openImage(buf);
+          const scale = Math.max(photoW / img.width, photoH / img.height);
+          const dw = img.width * scale;
+          const dh = img.height * scale;
+          doc.image(buf, photoX + (photoW - dw) / 2, photoY + (photoH - dh) * 0.22, {
+            width: dw,
+            height: dh,
+          });
+        }
       } catch { /* skip */ }
     }
     doc.restore();
@@ -268,7 +331,7 @@ function drawPrintedCertificate(
   }
 
   const textLeft = px(70);
-  const textRight = px(560);
+  const textRight = px(564) - 8;
   const textW = textRight - textLeft;
   const placeLine = (text: string, y: number, font: string, maxSize: number, minSize: number) => {
     let size = maxSize;
@@ -294,29 +357,39 @@ function drawPrintedCertificate(
 
   let y = py(708);
   const leftX = px(108);
-  const rightX = px(415);
-  const labelW = px(108);
-  const valueW = px(130);
+  const rightX = px(400);
+  const labelW = px(100);
+  const valueW = px(145);
   const meta: Array<[string, string, string, string]> = [
     ["EID Number", s.eid || "-", "Certificate No.", s.certificateNo],
     ["Employed by", s.company || "-", "Job No.", s.orderNo || s.jobNo],
     ["Training Date", formatCertDate(s.trainingDate), "Expiry Date", formatCertDate(s.expiresOn)],
   ];
+  const valueSize = (text: string) => {
+    let size = 8;
+    doc.font("Times-Bold");
+    while (size > 6.5 && doc.fontSize(size).widthOfString(text) > valueW) size -= 0.25;
+    const lines = doc.fontSize(size).widthOfString(text) > valueW ? 2 : 1;
+    return { size, lines };
+  };
   for (const [l1, v1, l2, v2] of meta) {
+    const left = valueSize(v1);
+    const right = valueSize(v2);
+    const rowH = Math.max(left.lines, right.lines) === 2 ? 22 : py(18);
     doc.font("Times-Bold").fontSize(8).fillColor(navy).text(l1, leftX, y, { width: labelW, lineBreak: false });
-    doc.font("Times-Bold").fontSize(8).fillColor(navy).text(v1, leftX + labelW, y, { width: valueW, lineBreak: false });
+    doc.font("Times-Bold").fontSize(left.size).fillColor(navy).text(v1, leftX + labelW, y, { width: valueW, height: rowH, lineBreak: left.lines === 2 });
     doc.font("Times-Bold").fontSize(8).fillColor(navy).text(l2, rightX, y, { width: labelW, lineBreak: false });
-    doc.font("Times-Bold").fontSize(8).fillColor(navy).text(v2, rightX + labelW, y, { width: valueW, lineBreak: false });
-    y += py(18);
+    doc.font("Times-Bold").fontSize(right.size).fillColor(navy).text(v2, rightX + labelW, y, { width: valueW, height: rowH, lineBreak: right.lines === 2 });
+    y += rowH;
   }
 
   doc.fillColor(navy).font("Times-BoldItalic").fontSize(9)
-    .text("AUTHORISED BY", px(118), py(798), { width: px(200), align: "left", characterSpacing: 0.6, lineBreak: false });
+    .text("AUTHORISED BY", px(118), py(798), { width: px(130), align: "left", characterSpacing: 0.6, lineBreak: false });
 
   const contactX = px(68);
-  const contactW = px(200);
-  y = py(880);
-  doc.fillColor(navy).font("Times-Bold").fontSize(7.5);
+  const contactW = px(168);
+  y = py(868);
+  doc.fillColor(navy).font("Times-Bold").fontSize(7);
   for (const line of [
     "Westcal Instrumentation and Calibration",
     "Services LLC",
@@ -327,25 +400,20 @@ function drawPrintedCertificate(
     "https://westcal.ae/",
   ]) {
     doc.text(line, contactX, y, { width: contactW, lineBreak: false });
-    y += 9.2;
+    y += 8.6;
   }
 
   if (qrPng) {
-    const qrSize = 58;
-    const qrX = px(445);
-    const qrY = py(790);
+    const qrSize = 52;
+    const qrX = px(488);
+    const qrY = py(786);
     doc.save();
     doc.rect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 6).fill("#ffffff");
     doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
     doc.restore();
   }
 
-  try {
-    const marks = readFileSync(CERTIFICATE_MARKS);
-    const markW = 113;
-    const markH = markW * (84 / 272);
-    doc.image(marks, 227, 672, { width: markW, height: markH });
-  } catch { /* skip */ }
+  if (!fieldsOnly) drawCertificateMarks(doc);
 }
 
 export async function sendTrainingCertificatePdf(
@@ -360,8 +428,8 @@ export async function sendTrainingCertificatePdf(
   const qrPng = qrUrl
     ? await QRCode.toBuffer(qrUrl, {
         errorCorrectionLevel: "M",
-        margin: 2,
-        width: 640,
+        margin: 1,
+        width: 240,
         color: { dark: "#000000", light: "#ffffff" },
       })
     : null;
@@ -402,7 +470,7 @@ export async function sendTrainingCertificatePdf(
     const artwork = await loadCertificateArtwork();
     drawPrintedCertificate(doc, s, qrPng, artwork, false, hidePhoto);
   }
-  applyDocumentControlFooter(doc, DOC_CONTROL.certificate);
+  applyDocumentControlFooter(doc, DOC_CONTROL.certificate, { pageNumber: false });
   doc.end();
 }
 
@@ -429,7 +497,8 @@ export async function sendTrainingCertificateLayoutPdf(
   if (artwork) {
     doc.image(artwork, 0, 0, { width: 595.28, height: 841.89 });
   }
-  applyDocumentControlFooter(doc, DOC_CONTROL.certificate);
+  drawCertificateMarks(doc);
+  applyDocumentControlFooter(doc, DOC_CONTROL.certificate, { pageNumber: false });
   doc.end();
 }
 
@@ -444,8 +513,8 @@ export async function sendTrainingCertificateContentPdf(
   const qrPng = verifyUrl
     ? await QRCode.toBuffer(verifyUrl, {
         errorCorrectionLevel: "M",
-        margin: 2,
-        width: 640,
+        margin: 1,
+        width: 240,
         color: { dark: "#000000", light: "#ffffff" },
       })
     : null;
@@ -462,6 +531,5 @@ export async function sendTrainingCertificateContentPdf(
   });
   doc.pipe(res);
   drawPrintedCertificate(doc, s, qrPng, null, true);
-  applyDocumentControlFooter(doc, DOC_CONTROL.certificate);
   doc.end();
 }

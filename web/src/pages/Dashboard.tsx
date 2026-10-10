@@ -14,13 +14,13 @@ function greeting() {
 
 export function Dashboard() {
   const { session, perms, go, openService, openJob, goToCertificates } = useApp();
-  const { loading, data } = usePageData(() => api<Job[]>("GET", "/api/training").catch(() => [] as Job[]));
+  const { data } = usePageData(() => api<Job[]>("GET", "/api/training").catch(() => [] as Job[]));
   const [listService, setListService] = useState("All");
   const all = data ?? [];
   const listed = newestFirst(listService === "All" ? all : all.filter((j) => (j.serviceType || "Training") === listService));
   const paged = usePaged(listed, listService);
 
-  if (loading || !data) return <PageLoading label="Loading dashboard…" />;
+  if (!data) return <PageLoading label="Loading dashboard…" />;
   const jobs = newestFirst(data);
 
   const bySvc = (s: string) => jobs.filter((j) => (j.serviceType || "Training") === s).length;

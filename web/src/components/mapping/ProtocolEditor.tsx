@@ -1,13 +1,13 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Modal } from "../Modal";
 import {
+  addSyncedLoggerRows,
   addToList,
   emptySheetRow,
   HUM_RANGES,
   isTicked,
   loadList,
   LOGGER_NAMES,
-  nextKey,
   readLayoutImage,
   SEASONS,
   SHEET_COLUMNS,
@@ -89,6 +89,65 @@ export function ListSelect(props: {
         </div>
       )}
     </div>
+  );
+}
+
+function clampRowCount(raw: string): number {
+  return Math.min(200, Math.max(1, Math.floor(Number(raw) || 1)));
+}
+
+function AddRowsControl({ onAdd, label }: { onAdd: (n: number) => void; label?: string }) {
+  const [n, setN] = useState("1");
+  function go(e?: { preventDefault(): void; stopPropagation(): void }) {
+    e?.preventDefault();
+    e?.stopPropagation();
+    onAdd(clampRowCount(n));
+  }
+  return (
+    <div className="add-rows">
+      <label>
+        How many rows
+        <input
+          type="number"
+          min={1}
+          max={200}
+          value={n}
+          aria-label="Number of rows to add"
+          onChange={(e) => setN(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") go(e);
+          }}
+        />
+      </label>
+      <button type="button" className="btn dark sm" onClick={go}>
+        {label || "+ Add rows"}
+      </button>
+    </div>
+  );
+}
+
+function SheetAddRows({
+  allowMany,
+  onAdd,
+  manyLabel,
+}: {
+  allowMany: boolean;
+  onAdd: (n: number) => void;
+  manyLabel?: string;
+}) {
+  if (allowMany) return <AddRowsControl onAdd={onAdd} label={manyLabel} />;
+  return (
+    <button
+      type="button"
+      className="btn dark sm"
+      style={{ marginTop: 8 }}
+      onClick={(e) => {
+        e.preventDefault();
+        onAdd(1);
+      }}
+    >
+      + Add row
+    </button>
   );
 }
 
@@ -255,7 +314,9 @@ export function DocSheet(props: {
   );
 }
 
-export function LayoutUpload({ sheets, setSheets }: { sheets: Sheets; setSheets: (s: Sheets) => void }) {
+type SetSheets = Dispatch<SetStateAction<Sheets>>;
+
+export function LayoutUpload({ sheets, setSheets }: { sheets: Sheets; setSheets: SetSheets }) {
   const [inputKey, setInputKey] = useState(0);
   const value = sheets.layout.value;
   return (
@@ -272,7 +333,8 @@ export function LayoutUpload({ sheets, setSheets }: { sheets: Sheets; setSheets:
           const file = e.target.files && e.target.files[0];
           if (!file) return;
           try {
-            setSheets({ ...sheets, layout: { touched: true, value: await readLayoutImage(file) } });
+            const value = await readLayoutImage(file);
+            setSheets((prev) => ({ ...prev, layout: { touched: true, value } }));
           } catch (err) {
             alert((err as Error).message);
           }
@@ -283,7 +345,7 @@ export function LayoutUpload({ sheets, setSheets }: { sheets: Sheets; setSheets:
         className="btn ghost sm"
         style={{ marginLeft: 8 }}
         onClick={() => {
-          setSheets({ ...sheets, layout: { touched: true, value: "" } });
+          setSheets((prev) => ({ ...prev, layout: { touched: true, value: "" } }));
           setInputKey(inputKey + 1);
         }}
       >
@@ -294,22 +356,44 @@ export function LayoutUpload({ sheets, setSheets }: { sheets: Sheets; setSheets:
   );
 }
 
-export function ProtocolSheetsEditor({ sheets, setSheets, logger }: { sheets: Sheets; setSheets: (s: Sheets) => void; logger: string }) {
+export function ProtocolSheetsEditor({
+  sheets,
+  setSheets,
+  logger,
+  allowAddRows = false,
+}: {
+  sheets: Sheets;
+  setSheets: SetSheets;
+  logger: string;
+  allowAddRows?: boolean;
+}) {
   const setLogger = (key: number, patch: Partial<LoggerRow>) =>
-    setSheets({ ...sheets, loggers: sheets.loggers.map((l) => (l.key === key ? { ...l, ...patch } : l)) });
-  const table = (kind: SheetKind, label: string) => (
+    setSheets((prev) => ({ ...prev, loggers: prev.loggers.map((l) => (l.key === key ? { ...l, ...patch } : l)) }));
+  const addSynced = (n: number) => setSheets((prev) => addSyncedLoggerRows(prev, n));
+  const table = (kind: SheetKind, label: string, manyLabel: string) => (
     <div style={{ marginTop: 18 }}>
       <label>{label}</label>
-      <DocSheet kind={kind} rows={sheets[kind]} logger={logger} editable removable onChange={(rows) => setSheets({ ...sheets, [kind]: rows })} />
-      <button type="button" className="btn sec sm" style={{ marginTop: 8 }} onClick={() => setSheets({ ...sheets, [kind]: [...sheets[kind], emptySheetRow(kind)] })}>
-        + Add row
-      </button>
+      <DocSheet kind={kind} rows={sheets[kind]} logger={logger} editable removable onChange={(rows) => setSheets((prev) => ({ ...prev, [kind]: rows }))} />
+      <SheetAddRows
+        allowMany={allowAddRows}
+        manyLabel={manyLabel}
+        onAdd={(n) => {
+          if (kind === "chg") {
+            setSheets((prev) => ({
+              ...prev,
+              chg: [...prev.chg, ...Array.from({ length: n }, () => emptySheetRow("chg"))],
+            }));
+            return;
+          }
+          addSynced(n);
+        }}
+      />
     </div>
   );
   return (
     <div style={{ marginTop: 16 }}>
       <p className="hint">
-        These tables use the same blue header and the same column names as MAP-WH-DIP-TRNSMD-039-P. Type in the white cells. + Add row adds one line in that table.
+        Type how many rows, then Add rows. New lines are added to the logger list and to the temperature and humidity tables together. Scroll the table to see them.
       </p>
       <label>Data loggers' location</label>
       <div className="doc-wrap" style={{ maxHeight: 420 }}>
@@ -338,7 +422,7 @@ export function ProtocolSheetsEditor({ sheets, setSheets, logger }: { sheets: Sh
                   <button
                     type="button"
                     className="btn ghost sm"
-                    onClick={() => setSheets({ ...sheets, loggers: sheets.loggers.filter((x) => x.key !== l.key) })}
+                    onClick={() => setSheets((prev) => ({ ...prev, loggers: prev.loggers.filter((x) => x.key !== l.key) }))}
                   >
                     ×
                   </button>
@@ -348,17 +432,10 @@ export function ProtocolSheetsEditor({ sheets, setSheets, logger }: { sheets: Sh
           </tbody>
         </table>
       </div>
-      <button
-        type="button"
-        className="btn sec sm"
-        style={{ marginTop: 8 }}
-        onClick={() => setSheets({ ...sheets, loggers: [...sheets.loggers, { key: nextKey(), loggerId: "", height: "", comments: "" }] })}
-      >
-        + Add row
-      </button>
-      {table("temp", "Table of Results — temperature")}
-      {table("hum", "Table of Results — humidity")}
-      {table("chg", "Change record")}
+      <SheetAddRows allowMany={allowAddRows} manyLabel="+ Add logger rows" onAdd={addSynced} />
+      {table("temp", "Table of Results — temperature", "+ Add temperature rows")}
+      {table("hum", "Table of Results — humidity", "+ Add humidity rows")}
+      {table("chg", "Change record", "+ Add change rows")}
     </div>
   );
 }
@@ -405,20 +482,30 @@ export function MappingRanges(props: RangeValues & { onChange: (patch: Partial<R
   );
 }
 
-export function ProtocolPreview(props: { p: Protocol; set: SetProtocol; sheets: Sheets; setSheets: (s: Sheets) => void; onClose: () => void }) {
-  const { p, set, sheets, setSheets } = props;
+export function ProtocolPreview(props: {
+  p: Protocol;
+  set: SetProtocol;
+  sheets: Sheets;
+  setSheets: SetSheets;
+  onClose: () => void;
+  allowAddRows?: boolean;
+}) {
+  const { p, set, sheets, setSheets, allowAddRows = false } = props;
   const [editing, setEditing] = useState(false);
   const logger = p.logger_name || "Tempnix";
   const software = p.software_name || "Tempnix software";
   const table = (kind: SheetKind, label: string) => (
     <div style={{ marginTop: 16 }}>
       <label>{label}</label>
-      <DocSheet kind={kind} rows={sheets[kind]} logger={logger} editable={editing} removable={false} onChange={(rows) => setSheets({ ...sheets, [kind]: rows })} />
-      {editing && (
-        <button type="button" className="btn sec sm" style={{ marginTop: 8 }} onClick={() => setSheets({ ...sheets, [kind]: [...sheets[kind], emptySheetRow(kind)] })}>
-          + Add row
-        </button>
-      )}
+      <DocSheet
+        kind={kind}
+        rows={sheets[kind]}
+        logger={logger}
+        editable={editing}
+        removable={false}
+        onChange={(rows) => setSheets((prev) => ({ ...prev, [kind]: rows }))}
+      />
+      {editing && <SheetAddRows allowMany={allowAddRows} manyLabel="+ Add rows" onAdd={(n) => setSheets((prev) => addSyncedLoggerRows(prev, n))} />}
     </div>
   );
   return (

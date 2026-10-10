@@ -14,7 +14,7 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
           <img src={photo} alt="" />
         </div>
       )}
-      {design === "achievement" && <img className="cert-marks" src="/certificate-marks.png?v=20260928e" alt="" />}
+      {design === "achievement" && <img className="cert-marks" src="/certificate-marks.png?v=20261007m" alt="KHDA permit" />}
       <div className="cert-name">{c.name || ""}</div>
       <hr className="cert-rule" />
       <div className="lead">has successfully completed one day safety training for</div>

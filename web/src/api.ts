@@ -1,3 +1,4 @@
+import { cachedGet, clearGetCache } from "./lib/getCache";
 import { isJobListRequest, processJobList } from "./lib/fastList.js";
 import type { Session } from "./types";
 
@@ -31,6 +32,13 @@ export function hasValidToken(): boolean {
 }
 
 export async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
+  if (method !== "GET") clearGetCache();
+  const load = () => request<T>(method, path, body);
+  if (method === "GET" && path.startsWith("/api/")) return cachedGet(method + " " + path, load);
+  return load();
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = "Bearer " + token;
   const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });

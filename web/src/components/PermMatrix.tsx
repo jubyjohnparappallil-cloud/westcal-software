@@ -9,7 +9,7 @@ export const STAFF_TRAINING_PERMS: [string, string][] = [
   ["Training:add_attendees", "Add & edit trainees"],
   ["Training:attendance", "Attendance sheet"],
   ["Training:edit_issued", "Edit trainees & attendance after issue"],
-  ["Training:documents", "Job sheet & review form"],
+  ["Training:documents", "Training contract review (one PDF)"],
   ["Certificates:read", "View & download certificates"],
   ["Certificates:edit", "Issue & edit certificates"],
   ["Invoice:create", "Add invoice number & close job"],
@@ -17,7 +17,15 @@ export const STAFF_TRAINING_PERMS: [string, string][] = [
   ["Reports:read", "Reports"],
 ];
 
-export const STAFF_PERM_KEYS = [...PMODS.flatMap((m) => PACTS.map((a) => m + ":" + a)), ...STAFF_TRAINING_PERMS.map(([k]) => k)];
+export const MAPPING_EXTRA_PERMS: [string, string][] = [
+  ["Mapping:add_rows", "Add multiple mapping table rows"],
+];
+
+export const STAFF_PERM_KEYS = [
+  ...PMODS.flatMap((m) => PACTS.map((a) => m + ":" + a)),
+  ...MAPPING_EXTRA_PERMS.map(([k]) => k),
+  ...STAFF_TRAINING_PERMS.map(([k]) => k),
+];
 
 const OFFICE_TRAINING = ["Training:cancel", "Training:attendance", "Training:add_attendees", "Reports:read"];
 
@@ -118,6 +126,20 @@ export function PermMatrix({ value, onChange }: { value: Set<string>; onChange: 
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="perm-group">
+        <b>Mapping only</b>
+        <div className="perm-list">
+          {MAPPING_EXTRA_PERMS.map(([key, label]) => (
+            <label key={key} className={"perm-item" + (value.has(key) ? " on" : "")}>
+              <input type="checkbox" checked={value.has(key)} onChange={() => toggle(key)} />
+              {label}
+            </label>
+          ))}
+        </div>
+        <p className="hint" style={{ margin: "8px 0 0" }}>
+          This is not used in Training, Testing, Calibration or Inspection. Tick it for the role that fills mapping logger and temperature tables.
+        </p>
       </div>
       <p className="hint" style={{ margin: 0 }}>
         Only the ticked items work for this person. Deleting jobs stays Super Admin only.

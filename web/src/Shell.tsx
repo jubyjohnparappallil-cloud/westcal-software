@@ -13,25 +13,33 @@ import { Trainers } from "./pages/Trainers";
 import { Users } from "./pages/Users";
 
 export function Shell() {
-  const { session, perms, nav, go, signOut } = useApp();
+  const { session, perms, nav, go, signOut, goToCertificates } = useApp();
   const [navOpen, setNavOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNoti, setShowNoti] = useState(false);
   const loadNotifications = useCallback(async () => {
-    if (perms.has("Training:read"))
+    if (perms.has("Training:read") || perms.canIssueCerts())
       setNotifications(await api<Notification[]>("GET", "/api/notifications").catch(() => []));
   }, [perms]);
   useEffect(() => {
     loadNotifications();
-  }, []);
+    api("GET", "/api/training").catch(() => {});
+    const t = window.setInterval(() => {
+      if (!document.hidden) loadNotifications();
+    }, 45000);
+    return () => window.clearInterval(t);
+  }, [loadNotifications]);
 
   function toggleNotifications() {
-    if (showNoti) {
-      setShowNoti(false);
-      return;
-    }
-    setShowNoti(true);
+    setShowNoti((open) => !open);
+    if (!showNoti) loadNotifications();
+  }
+
+  function openNotification(n: Notification) {
+    setShowNoti(false);
     api("POST", "/api/notifications/read").then(loadNotifications);
+    if (n.jobId) go("approvals", { certTab: "pending", jobId: n.jobId });
+    else goToCertificates("pending");
   }
 
   const items: [View, string, string][] = [["dashboard", "🏠", "Dashboard"]];
@@ -102,10 +110,10 @@ export function Shell() {
             <h2>{titles[nav.view]}</h2>
           </div>
           <div className="right">
-            {perms.has("Training:read") && (
-              <span className="bell" onClick={toggleNotifications}>
+            {(perms.has("Training:read") || perms.canIssueCerts()) && (
+              <span className="bell" onClick={toggleNotifications} title="Certificate requests">
                 🔔
-                <span className={"dot" + (unread === 0 ? " hidden" : "")}>{unread}</span>
+                <span className={"dot" + (unread === 0 ? " hidden" : "")}>{unread || ""}</span>
               </span>
             )}
             <div className="who">
@@ -123,13 +131,13 @@ export function Shell() {
             <div className="h">Notifications</div>
             {notifications.length ? (
               notifications.map((n, i) => (
-                <div key={n.id ?? i} className="item">
+                <button key={n.id ?? i} type="button" className="item" onClick={() => openNotification(n)}>
                   {n.read ? "" : "🔵 "}
                   {n.message}
-                </div>
+                </button>
               ))
             ) : (
-              <div className="item muted">No notifications</div>
+              <div className="item muted">No new certificate requests</div>
             )}
           </div>
         )}

@@ -24,7 +24,7 @@ export function formatDob(v: string | undefined): string {
   const m = String(v || "")
     .trim()
     .match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : v || "-";
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : v || "-";
 }
 
 export function certDate(v: string | undefined): string {
@@ -55,10 +55,30 @@ export function courseDescription(courses: Course[] | undefined, name: string): 
   return typeof c === "string" ? `${c} training and certification.` : c.description || `${c.name} training and certification.`;
 }
 
+export function formatClock(value?: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/\b(am|pm)\b/i.test(raw)) return raw.replace(/\b(am|pm)\b/gi, (s) => s.toUpperCase());
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(raw);
+  if (!m) return raw;
+  let hour = Number(m[1]);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  hour = hour % 12 || 12;
+  return `${String(hour).padStart(2, "0")}:${m[2]} ${suffix}`;
+}
+
+function displayDate(value: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : value;
+}
+
 export function jobDateRange(j: Job): string {
   const from = j.trainingDate || "";
   const to = j.trainingDateTo || from;
-  return from && to && to !== from ? from + " to " + to : from || to || "-";
+  if (!from && !to) return "-";
+  const start = displayDate(from);
+  const end = displayDate(to);
+  return start && end && to !== from ? start + " to " + end : start || end || "-";
 }
 
 export function jobInDateRange(j: Job, from: string, to: string): boolean {

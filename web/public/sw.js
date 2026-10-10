@@ -1,24 +1,18 @@
 /**
  * Service worker for the Westcal Field mobile app.
- *
- * Deliberately conservative: it caches only the app shell so the app opens on a
- * weak site connection. API calls are always network-first and are never served
- * stale, because job and attendance data must not be read from cache.
+ * HTML and /m are never cached so photo-fill updates reach the phone.
  */
-const SHELL_CACHE = "westcal-field-shell-v26";
-const SHELL_ASSETS = ["/app/m", "/app/logo.jpg", "/app/manifest.webmanifest"];
+const SHELL_CACHE = "westcal-field-shell-v34";
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_ASSETS)).then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== SHELL_CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -26,11 +20,20 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
-
   const url = new URL(request.url);
-  // Never cache API traffic.
   if (url.pathname.startsWith("/api/")) return;
-
+  const live =
+    request.mode === "navigate" ||
+    url.pathname === "/m" ||
+    url.pathname === "/m/" ||
+    url.pathname === "/mobile" ||
+    url.pathname.endsWith(".html") ||
+    url.pathname.endsWith("/sw.js") ||
+    !url.pathname.includes("/assets/");
+  if (live) {
+    event.respondWith(fetch(request, { cache: "reload" }));
+    return;
+  }
   event.respondWith(
     fetch(request)
       .then((res) => {
@@ -38,6 +41,6 @@ self.addEventListener("fetch", (event) => {
         caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
         return res;
       })
-      .catch(() => caches.match(request).then((hit) => hit || caches.match("/app/m")))
+      .catch(() => caches.match(request).then((hit) => hit || Promise.reject()))
   );
 });

@@ -5,9 +5,10 @@ import { AddTrainee } from "../../components/AddTrainee";
 import { ProtocolDetails } from "../../components/mapping/ProtocolDetails";
 import { PageLoading } from "../../components/PageLoading";
 import { Paged } from "../../components/Pagination";
-import { TraineeEditor } from "../../components/TraineeEditor";
-import { copyTraineeJoin, downloads } from "../../lib/downloads";
-import { isTrainingJob, jobCompanyNames, jobDateRange, sheetView, statusClass } from "../../lib/jobs";
+import { SignBox, TraineeEditor } from "../../components/TraineeEditor";
+import { TrainerSheet } from "../certificates/TrainerSheet";
+import { copyPublicLink, downloads } from "../../lib/downloads";
+import { isTrainingJob, jobCompanyNames, jobDateRange, formatClock, sheetView, statusClass } from "../../lib/jobs";
 import type { Assignee } from "../../lib/roles";
 import type { Job } from "../../types";
 
@@ -47,14 +48,14 @@ export function JobDetail({
   }, [jobId]);
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    cardRef.current?.scrollIntoView({ behavior: "smooth" });
+    cardRef.current?.scrollIntoView({ block: "nearest" });
   }, [loading]);
   const [tab, setTab] = useState("details");
   const refresh = () => {
     reload();
     onChanged();
   };
-  if (loading || !data) return <PageLoading label="Loading job…" />;
+  if (!data) return <PageLoading label="Loading job…" />;
   const j = data.job;
   if (!j) return null;
 
@@ -155,25 +156,13 @@ export function JobDetail({
             )}
             <div>
               <label>Date</label>
-              {jobDateRange(j)} {j.trainingTime || ""}
+              {jobDateRange(j)}
+              {j.trainingTime ? " " + formatClock(j.trainingTime) : ""}
             </div>
             <Field label="Assigned to" value={[j.assigneeName || j.trainerName, j.assigneeRole].filter(Boolean).join(" · ")} />
             <Field label="Job order no" value={j.jobOrderNo} />
             <Field label="Sales person" value={j.salesPerson} />
             <Field label="Handed over to" value={j.handedOverTo} />
-          </div>
-          <div>
-            <b>Work codes:</b> {j.workCodeTraining ? "☑" : "☐"} Training {"  "}
-            {j.workCodeCertification ? "☑" : "☐"} Certification
-            {mapping && (
-              <>
-                {" "}
-                {"  "}
-                {j.workCodeCalibration ? "☑" : "☐"} Calibration {"  "}
-                {j.workCodeSupply ? "☑" : "☐"} Supply {"  "}
-                {j.workCodeRepairing ? "☑" : "☐"} Repairing
-              </>
-            )}
           </div>
           {lines.length > 0 && (
             <>
@@ -286,17 +275,54 @@ export function JobDetail({
         </>
       )}
 
-      {current === "protocol" && <ProtocolDetails job={j} editable={perms.canEditJob() && j.status !== "Cancelled" && perms.canChangeJob(j.status)} onSaved={refresh} />}
-
-      {current === "trainees" && (
-        <>
-          {perms.isFieldUser() && ["Assigned", "In Progress"].includes(j.status) && <IdTextTrainee jobId={j.id} onAdded={refresh} />}
-          <TraineeList job={j} onChanged={refresh} />
-          {!perms.isFieldUser() &&
-            perms.canAddTrainees() &&
-            ["Created", "Assigned", "In Progress", "Rejected"].includes(j.status) && <OfficeSubmit job={j} onSubmitted={refresh} />}
-        </>
+      {current === "protocol" && (
+        <ProtocolDetails
+          job={j}
+          editable={perms.canEditMapping() && j.status !== "Cancelled" && perms.canChangeJob(j.status)}
+          onSaved={refresh}
+        />
       )}
+
+      {current === "trainees" &&
+        (training && perms.isAssistant() ? (
+          <>
+            <TrainerSheet
+              job={j}
+              canMark={perms.canAddTrainees() && j.status !== "Cancelled" && j.status !== "Closed" && perms.canChangeJob(j.status)}
+              onChanged={refresh}
+            />
+            {["Created", "Assigned", "In Progress", "Rejected"].includes(j.status) && (
+              <p style={{ marginTop: 14 }}>
+                <button
+                  className="btn ok"
+                  onClick={async () => {
+                    if (!j.attendees.length) {
+                      alert("Add at least one trainee first.");
+                      return;
+                    }
+                    if (!confirm(`Send ${j.jobNo} for certificates with ${j.attendees.length} trainee(s)?`)) return;
+                    try {
+                      await api("POST", `/api/training/${j.id}/submit`);
+                      refresh();
+                    } catch (e) {
+                      alert((e as Error).message);
+                    }
+                  }}
+                >
+                  Submit attendance for certificates
+                </button>
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            {perms.isFieldUser() && ["Assigned", "In Progress"].includes(j.status) && <IdTextTrainee jobId={j.id} onAdded={refresh} />}
+            <TraineeList job={j} onChanged={refresh} />
+            {!perms.isFieldUser() && perms.canAddTrainees() && j.status !== "Cancelled" && j.status !== "Closed" && (
+              <OfficeSubmit job={j} onSubmitted={refresh} />
+            )}
+          </>
+        ))}
 
       {current === "documents" && (
         <>
@@ -305,13 +331,8 @@ export function JobDetail({
               <p className="hint">Download the PDF documents for this job.</p>
               <p style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {perms.canDownload() && (
-                  <button className="btn dark sm" onClick={() => downloads.jobSheet(j.id, docNo)}>
-                    Job sheet
-                  </button>
-                )}
-                {perms.canDownload() && training && (
-                  <button className="btn dark sm" onClick={() => downloads.review(j.id, docNo)}>
-                    Review form
+                  <button className="btn dark sm" onClick={() => downloads.jobSheet(j.id, j.jobNo)}>
+                    {training ? "Training contract review" : "Job sheet"}
                   </button>
                 )}
                 {training && perms.canAttendance() && (
@@ -424,7 +445,11 @@ function CertifiedToEditor({ job, onSaved }: { job: Job; onSaved: () => void }) 
 }
 
 function AssignPanel({ job, assignees, onAssigned }: { job: Job; assignees: Assignee[]; onAssigned: () => void }) {
-  const [assigneeId, setAssigneeId] = useState(assignees[0]?.id || "");
+  const training = isTrainingJob(job);
+  const choices = assignees.filter((a) =>
+    training ? a.roleName === "Trainer" || a.roleName === "Certificate Coordinator" : a.roleName === "Site Engineer",
+  );
+  const [assigneeId, setAssigneeId] = useState(choices[0]?.id || "");
   async function assign() {
     try {
       await api("POST", `/api/training/${job.id}/assign`, { assigneeId });
@@ -435,17 +460,17 @@ function AssignPanel({ job, assignees, onAssigned }: { job: Job; assignees: Assi
   }
   return (
     <>
-      <div className="sect">Assign to trainer / site engineer</div>
-      <div style={{ display: "flex", gap: 10, maxWidth: 460 }}>
+      <div className="sect">Assign to {training ? "trainer or certificate coordinator" : "site engineer"}</div>
+      <div style={{ display: "flex", gap: 10, maxWidth: 520 }}>
         <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-          {assignees.length ? (
-            assignees.map((a) => (
+          {choices.length ? (
+            choices.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.displayName} — {a.roleName}
               </option>
             ))
           ) : (
-            <option value="">(no trainers or site engineers)</option>
+            <option value="">{training ? "(no trainers or certificate coordinators)" : "(no site engineers)"}</option>
           )}
         </select>
         <button className="btn" onClick={assign}>
@@ -568,51 +593,68 @@ function TraineeList({ job, onChanged }: { job: Job; onChanged: () => void }) {
   const open = job.status !== "Cancelled" && job.status !== "Closed" && perms.canChangeJob(job.status);
   const canEdit = perms.canEditTrainees() && open;
   const canAdd = perms.canAddTrainees() && open;
+  const [editing, setEditing] = useState<string | null>(null);
   return (
     <>
       <div className="sect">Trainees ({job.attendees.length})</div>
       <p className="hint">
         {sheet.courseTitle} · {sheet.date}
-        {job.trainingTime ? " · " + job.trainingTime : ""} · {sheet.certifiedBy}
+        {job.trainingTime ? " · " + formatClock(job.trainingTime) : ""} · {sheet.certifiedBy}
       </p>
       {canAdd && <AddTrainee job={job} onAdded={onChanged} />}
+      <p className="hint" style={{ marginTop: 10 }}>
+        Customer attendance link (whole sheet — all trainees):{" "}
+        <span style={{ wordBreak: "break-all" }}>{location.origin + "/public/training/" + job.id}</span>
+      </p>
+      <p>
+        <button type="button" className="btn ghost sm" onClick={() => copyPublicLink(job.id)}>
+          Copy customer attendance link
+        </button>
+      </p>
       {job.attendees.length ? (
         <Paged items={job.attendees} resetKey={job.id}>
           {(rows, offset) =>
-            rows.map((a, i) => (
+            rows.map((a, i) => {
+              const photo = a.photoDataUrl || a.extraPhotoDataUrl || "";
+              const isOpen = editing === a.id;
+              return (
               <div key={a.id} className="job-block">
                 <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
-                  {(a.photoDataUrl || a.extraPhotoDataUrl) && (
-                    <img src={a.photoDataUrl || a.extraPhotoDataUrl} alt="" style={{ height: 72, width: 58, objectFit: "cover", borderRadius: 8 }} />
+                  {photo ? (
+                    <img className="office-att-photo" src={photo} alt="" />
+                  ) : (
+                    <div className="office-att-photo empty">No photo</div>
                   )}
                   <div style={{ flex: 1, minWidth: 240 }}>
                     <b>
                       {offset + i + 1}. {a.name || "Trainee"}
                     </b>
                     {a.signature ? " · signed" : ""}
-                    {canEdit ? (
-                      <TraineeEditor
-                        job={job}
-                        attendee={a}
-                        onSaved={onChanged}
-                        extraButtons={
-                          job.traineeInviteToken &&
-                          a.editToken && (
-                            <button className="btn ghost sm" onClick={() => copyTraineeJoin(job.traineeInviteToken!, a.editToken)}>
-                              Copy join link
-                            </button>
-                          )
-                        }
-                      />
-                    ) : (
-                      <p className="muted" style={{ margin: "6px 0 0" }}>
-                        EID: {a.idOrVisaNo || "-"} · {a.company || job.customerName} · {a.course || job.course || ""}
-                      </p>
+                    <div className="muted" style={{ marginTop: 4 }}>
+                      EID: {a.idOrVisaNo || "re-upload ID or type it"} · {a.company || job.customerName} · {a.course || job.course || ""}
+                    </div>
+                    {canEdit && (
+                      <>
+                        <p style={{ margin: "8px 0 0" }}>
+                          <button type="button" className="btn sec sm" onClick={() => setEditing(isOpen ? null : a.id)}>
+                            {isOpen ? "Close" : "Edit"}
+                          </button>
+                        </p>
+                        {isOpen && (
+                          <TraineeEditor
+                            job={job}
+                            attendee={a}
+                            onSaved={onChanged}
+                            onDeleted={() => setEditing(null)}
+                          />
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
               </div>
-            ))
+              );
+            })
           }
         </Paged>
       ) : (
@@ -669,22 +711,51 @@ function DatesEditor({ job, onSaved }: { job: Job; onSaved: () => void }) {
   );
 }
 
-/** Office completes the attendance sheet when the trainer did not, then sends the job to admin. */
+/** Office / Certificate Coordinator completes attendance: trainees, signatures, then submit if needed. */
 function OfficeSubmit({ job, onSubmitted }: { job: Job; onSubmitted: () => void }) {
-  const { session } = useApp();
+  const { session, perms } = useApp();
+  const coordinator = perms.isAssistant() || perms.canIssueCerts();
+  const canSend = ["Created", "Assigned", "In Progress", "Rejected"].includes(job.status);
   const [verified, setVerified] = useState(!!job.trainerVerified);
   const [authorizedBy, setAuthorizedBy] = useState(job.authorizedBy || session.displayName);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState("");
+
+  async function saveMeta(signature?: string) {
+    await api("POST", `/api/training/${job.id}/attendance-meta`, {
+      trainerVerified: verified,
+      authorizedBy: authorizedBy.trim(),
+      ...(signature !== undefined ? { trainerSignature: signature } : job.trainerSignature ? { trainerSignature: job.trainerSignature } : {}),
+    });
+  }
+
+  async function saveOnly() {
+    setErr("");
+    setOk("");
+    if (!authorizedBy.trim()) return setErr("Enter who authorized the attendance sheet.");
+    setBusy(true);
+    try {
+      await saveMeta();
+      setOk("Attendance signature saved.");
+      onSubmitted();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit() {
     setErr("");
+    setOk("");
     if (!job.attendees.length) return setErr("Add at least one trainee first.");
     if (!verified) return setErr("Tick that you checked the attendance sheet.");
     if (!authorizedBy.trim()) return setErr("Enter who authorized the attendance sheet.");
-    if (!confirm(`Send ${job.jobNo} to the Certificate Coordinator with ${job.attendees.length} trainee(s)?`)) return;
+    if (!confirm(`Send ${job.jobNo} for certificates with ${job.attendees.length} trainee(s)?`)) return;
     setBusy(true);
     try {
-      await api("POST", `/api/training/${job.id}/attendance-meta`, { trainerVerified: true, authorizedBy: authorizedBy.trim() });
+      await saveMeta();
       await api("POST", `/api/training/${job.id}/submit`);
       onSubmitted();
     } catch (e) {
@@ -693,10 +764,15 @@ function OfficeSubmit({ job, onSubmitted }: { job: Job; onSubmitted: () => void 
       setBusy(false);
     }
   }
+
   return (
     <div className="job-block" style={{ marginTop: 16 }}>
-      <h4>Office: complete the attendance sheet</h4>
-      <p className="hint">Use this when the trainer did not fill the attendance. Add the trainees above, then send it to the Certificate Coordinator.</p>
+      <h4>{coordinator ? "Certificate Coordinator: attendance & signatures" : "Office: complete the attendance sheet"}</h4>
+      <p className="hint">
+        {coordinator
+          ? "Add trainees above, collect each trainee signature, then upload or draw the Certificate Coordinator signature here."
+          : "Use this when the trainer did not fill the attendance. Add trainees, signatures, then send for certificates."}
+      </p>
       <div className="grid">
         <div>
           <label>Authorized by</label>
@@ -709,9 +785,30 @@ function OfficeSubmit({ job, onSubmitted }: { job: Job; onSubmitted: () => void 
           </label>
         </div>
       </div>
-      <button className="btn ok" style={{ marginTop: 12 }} disabled={busy} onClick={submit}>
-        {busy ? "Sending…" : "Submit attendance to Certificate Coordinator"}
-      </button>
+      <SignBox
+        label={coordinator ? "Certificate Coordinator signature" : "Office / authorized signature"}
+        hint="Draw here or upload a signature picture. It prints on the attendance sheet."
+        value={job.trainerSignature}
+        onSave={async (trainerSignature) => {
+          await api("POST", `/api/training/${job.id}/attendance-meta`, {
+            trainerVerified: verified,
+            authorizedBy: authorizedBy.trim() || session.displayName,
+            trainerSignature,
+          });
+          onSubmitted();
+        }}
+      />
+      <p style={{ margin: "12px 0 0", display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button className="btn sec" disabled={busy} onClick={saveOnly}>
+          {busy ? "Saving…" : "Save authorized by"}
+        </button>
+        {canSend && (
+          <button className="btn ok" disabled={busy} onClick={submit}>
+            {busy ? "Sending…" : "Submit attendance for certificates"}
+          </button>
+        )}
+      </p>
+      {ok && <p className="ok-msg">{ok}</p>}
       <div className="err">{err}</div>
     </div>
   );

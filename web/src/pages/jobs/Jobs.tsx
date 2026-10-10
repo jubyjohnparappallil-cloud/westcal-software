@@ -2,10 +2,10 @@ import { useState } from "react";
 import { api } from "../../api";
 import { useApp, usePageData } from "../../app-context";
 import { InvoiceModal } from "../../components/InvoiceModal";
-import { PageLoading } from "../../components/PageLoading";
+import { PageError, PageLoading } from "../../components/PageLoading";
 import { Pagination, usePaged } from "../../components/Pagination";
 import { downloads } from "../../lib/downloads";
-import { jobCompanyNames, jobDateRange, jobExpiryDate, jobInDateRange, newestFirst, statusClass } from "../../lib/jobs";
+import { jobCompanyNames, jobDateRange, jobExpiryDate, jobInDateRange, formatClock, newestFirst, statusClass } from "../../lib/jobs";
 import type { Job } from "../../types";
 import { TrainingTabs } from "../Courses";
 import { CancelJobModal } from "./CancelJobModal";
@@ -33,7 +33,7 @@ function matchesStat(j: Job, stat: string): boolean {
 export function Jobs() {
   const { nav, perms } = useApp();
   const service = nav.jobService;
-  const { loading, data, reload } = usePageData(() => api<Job[]>("GET", "/api/training"), [service]);
+  const { data, error, reload } = usePageData(() => api<Job[]>("GET", "/api/training"), [service]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [time, setTime] = useState("");
@@ -78,7 +78,8 @@ export function Jobs() {
     );
   }
 
-  if (loading || !data) return <PageLoading label="Loading jobs…" />;
+  if (!data && error) return <PageError message={error} onRetry={reload} />;
+  if (!data) return <PageLoading label="Loading jobs…" />;
 
   async function remove(j: Job) {
     if (!confirm(`Delete job ${j.jobNo}? This cannot be undone.`)) return;
@@ -197,7 +198,7 @@ export function Jobs() {
                         </a>
                       </td>
                       <td>{jobDateRange(j)}</td>
-                      <td>{j.trainingTime || "-"}</td>
+                      <td>{j.trainingTime ? formatClock(j.trainingTime) : "-"}</td>
                       {training && <td>{jobExpiryDate(j) || "-"}</td>}
                       <td>{j.location || "-"}</td>
                       <td>{j.course}</td>
@@ -229,13 +230,8 @@ export function Jobs() {
                           Open
                         </button>
                         {perms.canDownload() && (
-                          <button className="btn dark sm" style={{ marginLeft: 6 }} onClick={() => downloads.jobSheet(j.id, j.jobOrderNo || j.jobNo)}>
-                            Job sheet
-                          </button>
-                        )}
-                        {perms.canDownload() && (j.serviceType || "Training") === "Training" && (
-                          <button className="btn dark sm" style={{ marginLeft: 6 }} onClick={() => downloads.review(j.id, j.jobOrderNo || j.jobNo)}>
-                            Review form
+                          <button className="btn dark sm" style={{ marginLeft: 6 }} onClick={() => downloads.jobSheet(j.id, j.jobNo)}>
+                            {(j.serviceType || "Training") === "Training" ? "Training contract review" : "Job sheet"}
                           </button>
                         )}
                         {(j.serviceType || "") === "Mapping" && (
