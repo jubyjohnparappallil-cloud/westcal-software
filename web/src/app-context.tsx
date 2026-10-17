@@ -54,7 +54,7 @@ export function AppProvider(props: { session: Session; initialCourses: Course[];
     if (Date.now() - lastRefresh.current < PERM_REFRESH_MS) return;
     lastRefresh.current = Date.now();
     api<Session>("GET", "/api/me")
-      .then((me) => setSession((s) => ({ ...s, perms: me.perms || [], roles: me.roles || s.roles, modules: me.modules ?? null })))
+      .then((me) => setSession((s) => ({ ...s, identifier: me.identifier || s.identifier, perms: me.perms || [], roles: me.roles || s.roles, modules: me.modules ?? null })))
       .catch(() => {});
   }, []);
   const go = useCallback(

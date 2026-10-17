@@ -422,6 +422,12 @@ label {
   margin: 0 0 8px;
   font-weight: 700;
 }
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+}
 input,
 select,
 textarea {

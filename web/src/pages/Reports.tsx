@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { api } from "../api";
 import { useApp, usePageData } from "../app-context";
-import { PageLoading } from "../components/PageLoading";
+import { PageError, PageLoading } from "../components/PageLoading";
 import { Paged } from "../components/Pagination";
 import {
   addDaysIso,
@@ -9,12 +9,13 @@ import {
   jobCompanyNames,
   jobDateRange,
   jobExpiryDate,
+  jobInDateRange,
   jobInReportPeriod,
   newestFirst,
   openedAt,
   statusClass,
 } from "../lib/jobs";
-import type { Certificate, Job } from "../types";
+import type { Job, Session } from "../types";
 
 function csvCell(v: unknown): string {
   const s = String(v ?? "");
@@ -36,7 +37,7 @@ function downloadCsv(jobs: Job[], period: string, date: string) {
     "Status",
     "Invoice no",
     "Trainees",
-    "Certificates",
+    "Certificate numbers",
     "Expiry date",
     "Closed",
   ];
@@ -55,7 +56,7 @@ function downloadCsv(jobs: Job[], period: string, date: string) {
       j.status,
       j.invoiceNumber || "",
       (j.attendees || []).length,
-      (j.certificates || []).length,
+      certificateNumbers(j).join(", "),
       jobExpiryDate(j),
       j.status === "Closed" ? "Yes" : "No",
     ]
@@ -70,15 +71,81 @@ function downloadCsv(jobs: Job[], period: string, date: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1500);
 }
 
+function jobIsInvoiced(j: Job): boolean {
+  return j.status === "Closed" || !!String(j.invoiceNumber || "").trim();
+}
+
+function jobIsIssued(j: Job): boolean {
+  return j.status === "Issued" || j.status === "Approved";
+}
+
+/** The accountant sees issued jobs that still need an invoice, and jobs already invoiced. */
+function isAccountant(session: Session): boolean {
+  const id = String(session.identifier || "").trim().toLowerCase();
+  if (id) return id === "accountant";
+  return session.displayName.trim().toLowerCase() === "munaveer";
+}
+
+function certificateNumbers(j: Job): string[] {
+  return (j.certificates || []).map((c) => String(c.certificateNo || "").trim()).filter(Boolean);
+}
+
+function InvoiceCloseBox({ job, onSaved }: { job: Job; onSaved: () => void }) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  if (jobIsInvoiced(job)) return <span>{job.invoiceNumber || "Closed"}</span>;
+
+  async function save(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!value.trim()) return setErr("Type the invoice number.");
+    setBusy(true);
+    setErr("");
+    try {
+      await api("POST", `/api/training/${job.id}/invoice`, { invoiceNumber: value.trim() });
+      onSaved();
+    } catch (caught) {
+      setErr((caught as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input value={value} placeholder="Invoice number" onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save(e as unknown as MouseEvent)} />
+        <button className="btn sm" type="button" disabled={busy} onClick={save}>
+          {busy ? "Saving…" : "Close"}
+        </button>
+      </div>
+      {err && <div className="err">{err}</div>}
+    </div>
+  );
+}
+
 const STATUS_TABS: [string, string, (j: Job) => boolean][] = [
-  ["all", "All jobs", () => true],
-  ["open", "In progress", (j) => ["Created", "Assigned", "In Progress"].includes(j.status)],
+  ["all", "All", () => true],
+  ["created", "Created", (j) => j.status === "Created"],
+  ["assigned", "Assigned", (j) => j.status === "Assigned"],
+  ["open", "In progress", (j) => j.status === "In Progress"],
   ["pending", "Submitted", (j) => j.status === "Submitted"],
   ["returned", "Returned", (j) => j.status === "Rejected"],
-  ["issued", "Issued – waiting for invoice", (j) => j.status === "Issued" || j.status === "Approved"],
-  ["closed", "Closed (invoiced)", (j) => j.status === "Closed"],
+  ["issued", "Issued", (j) => j.status === "Issued" || j.status === "Approved"],
+  ["invoiced", "Invoiced", jobIsInvoiced],
+  ["not-invoiced", "Not invoiced", (j) => !jobIsInvoiced(j)],
   ["cancelled", "Cancelled", (j) => j.status === "Cancelled"],
 ];
+
+function periodLabel(period: string, ref: string): string {
+  if (period === "all") return "all dates";
+  if (period === "yearly") return ref.slice(0, 4);
+  if (period === "daily") return ref.split("-").reverse().join("-");
+  if (period === "weekly") return "the week of " + ref.split("-").reverse().join("-");
+  const [year, month] = ref.split("-");
+  const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return (names[Number(month) - 1] || month) + " " + year;
+}
 
 const PERIODS: [string, string][] = [
   ["daily", "Daily"],
@@ -89,67 +156,115 @@ const PERIODS: [string, string][] = [
 ];
 
 export function Reports() {
-  const { nav, go, perms, goToCertificates } = useApp();
-  const { data } = usePageData(() => api<Job[]>("GET", "/api/training"));
+  const { nav, go, perms, session, goToCertificates, openJob } = useApp();
+  const accountant = isAccountant(session);
+  const { data, error, reload } = usePageData(() => api<Job[]>("GET", "/api/training"));
   const [period, setPeriod] = useState("monthly");
   const [refDate, setRefDate] = useState(isoToday());
-  const status = STATUS_TABS.some(([id]) => id === nav.reportStatus) ? nav.reportStatus : "all";
+  const requested = nav.reportStatus === "closed" ? "invoiced" : nav.reportStatus;
+  const statusTabs = accountant
+    ? (["not-invoiced", "invoiced"] as const).map((id) => STATUS_TABS.find(([tab]) => tab === id)!)
+    : STATUS_TABS;
+  const status = statusTabs.some(([id]) => id === requested) ? requested : accountant ? "not-invoiced" : "all";
   const setStatus = (id: string) => go("reports", { reportStatus: id });
   const [customer, setCustomer] = useState("");
   const [trainer, setTrainer] = useState("");
   const [search, setSearch] = useState("");
-  if (!data) return <PageLoading label="Loading reports…" />;
+  const [query, setQuery] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [invoiceNo, setInvoiceNo] = useState("");
+  if (error || !data) {
+    if (error) return <PageError message={error} onRetry={reload} />;
+    return <PageLoading label="Loading reports…" />;
+  }
 
   const training = newestFirst(data.filter((j) => (j.serviceType || "Training") === "Training"));
-  const inStatus = (j: Job, id: string) => STATUS_TABS.find(([t]) => t === id)?.[2](j) ?? true;
+  const accountantNotInvoiced = (j: Job) => jobIsIssued(j) && !jobIsInvoiced(j);
+  const inStatus = (j: Job, id: string) =>
+    accountant && id === "not-invoiced" ? accountantNotInvoiced(j) : (STATUS_TABS.find(([t]) => t === id)?.[2](j) ?? true);
   const trainerOf = (j: Job) => j.assigneeName || j.trainerName || "";
   const customers = [...new Set(training.flatMap((j) => jobCompanyNames(j).concat(j.customerName || "")).filter(Boolean))].sort();
   const trainers = [...new Set(training.map(trainerOf).filter(Boolean))].sort();
-  const q = search.trim().toLowerCase();
-  const filtered = training.filter(
+  const q = query.trim().toLowerCase();
+  const invoiceQuery = invoiceNo.trim().toLowerCase().replace(/\s+/g, "");
+  const runSearch = () => setQuery(search.trim());
+  const invoiceText = (j: Job) => String(j.invoiceNumber || j.invoiceNo || "");
+  const inDates = (j: Job) => (from || to ? jobInDateRange(j, from, to) : jobInReportPeriod(j, period, refDate));
+  const dated = training.filter(
     (j) =>
+      inDates(j) &&
       (!customer || jobCompanyNames(j).includes(customer) || j.customerName === customer) &&
       (!trainer || trainerOf(j) === trainer) &&
+      (!invoiceQuery || invoiceText(j).toLowerCase().replace(/\s+/g, "").includes(invoiceQuery)) &&
       (!q ||
-        [j.jobNo, j.jobOrderNo, j.course, j.customerName, j.invoiceNumber, trainerOf(j), ...jobCompanyNames(j)]
+        [j.jobNo, j.jobOrderNo, j.course, j.customerName, invoiceText(j), trainerOf(j), ...jobCompanyNames(j)]
           .filter(Boolean)
           .some((v) => String(v).toLowerCase().includes(q))),
   );
-  const shown = filtered.filter((j) => inStatus(j, status)).filter((j) => jobInReportPeriod(j, period, refDate));
-  const closed = shown.filter((j) => j.status === "Closed");
+  const shown = dated.filter((j) => inStatus(j, status));
+  const statusCount = (id: string) => dated.filter((j) => inStatus(j, id)).length;
   const shownCustomers = [...new Set(shown.flatMap((j) => jobCompanyNames(j)).filter(Boolean))];
   const certCount = shown.reduce((n, j) => n + (j.certificates || []).length, 0);
-  const hasFilters = !!(customer || trainer || q);
+  const hasFilters = !!(customer || trainer || q || invoiceNo || from || to || status !== (accountant ? "not-invoiced" : "all"));
+  const openThisJob = (j: Job) => openJob(j.serviceType || "Training", j.id);
   const today = isoToday();
   const expiringSoon = shown.filter((j) => {
     const exp = jobExpiryDate(j);
     return exp && exp >= today && exp <= addDaysIso(today, 30);
   });
-  const certs: { c: Certificate; j: Job }[] = shown.flatMap((j) => (j.certificates || []).map((c) => ({ c, j })));
+  const statusName = STATUS_TABS.find(([id]) => id === status)?.[1] || "All";
+  const when =
+    from || to
+      ? [from, to].filter(Boolean).map((d) => d.split("-").reverse().join("-")).join(" to ")
+      : periodLabel(period, refDate);
+  const summary = `Showing ${shown.length} ${status === "all" ? "" : statusName + " "}job${shown.length === 1 ? "" : "s"} for ${when}. Click a job number to open it.`;
 
   return (
     <>
-      <div className="subtabs">
-        {STATUS_TABS.map(([id, label, test]) => (
-          <button key={id} className={status === id ? "on" : ""} onClick={() => setStatus(id)}>
-            {label} ({filtered.filter(test).length})
-          </button>
-        ))}
-      </div>
       <div className="card">
         <h3>Training report</h3>
-        <p className="hint">Pick a status above, then filter by customer, trainer or period.</p>
-        <div className="filters">
-          <div>
-            <label>Status</label>
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              {STATUS_TABS.map(([id, label]) => (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              ))}
-            </select>
+        <p className="hint" style={{ marginTop: 0 }}>{summary}</p>
+
+        <div className="sect">Date</div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end", marginBottom: 8 }}>
+          <div className="subtabs" style={{ margin: 0 }}>
+            {PERIODS.map(([id, label]) => (
+              <button key={id} className={period === id ? "on" : ""} onClick={() => setPeriod(id)}>
+                {label}
+              </button>
+            ))}
           </div>
+          {period !== "all" && !from && !to && (
+            <div>
+              <label>{period === "yearly" ? "Year" : period === "monthly" ? "Month" : "Date"}</label>
+              <input type="date" value={refDate} onChange={(e) => setRefDate(e.target.value || isoToday())} />
+            </div>
+          )}
+          <div>
+            <label>From</label>
+            <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+          </div>
+          <div>
+            <label>To</label>
+            <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+          </div>
+        </div>
+        {(from || to) && <p className="hint">From and To are the dates used. Clear them to go back to Daily, Weekly, Monthly, or Yearly.</p>}
+
+        <div className="sect">Status</div>
+        <div className="subtabs">
+          {statusTabs.map(([id, label]) => (
+            <button key={id} className={status === id ? "on" : ""} onClick={() => setStatus(id)}>
+              {label} ({statusCount(id)})
+            </button>
+          ))}
+        </div>
+        {accountant && (
+          <p className="hint">Not invoiced shows issued jobs only. Type the invoice number and choose Close to mark the job Closed.</p>
+        )}
+
+        <div className="filters">
           <div>
             <label>Customer</label>
             <select value={customer} onChange={(e) => setCustomer(e.target.value)}>
@@ -173,69 +288,47 @@ export function Reports() {
             </select>
           </div>
           <div>
+            <label>Invoice number</label>
+            <input value={invoiceNo} placeholder="Type the invoice number" onChange={(e) => setInvoiceNo(e.target.value)} />
+          </div>
+          <div>
             <label>Search</label>
-            <input value={search} placeholder="Job no, course, invoice no…" onChange={(e) => setSearch(e.target.value)} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={search}
+                placeholder="Job no, course, customer…"
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") runSearch();
+                }}
+              />
+              <button className="btn sm" type="button" onClick={runSearch}>
+                Search
+              </button>
+            </div>
           </div>
           <div style={{ alignSelf: "end" }}>
             <button
               className="btn ghost sm"
-              disabled={!hasFilters}
+              disabled={!hasFilters && !search}
               onClick={() => {
                 setCustomer("");
                 setTrainer("");
                 setSearch("");
+                setQuery("");
+                setFrom("");
+                setTo("");
+                setInvoiceNo("");
+                setStatus(accountant ? "not-invoiced" : "all");
               }}
             >
               Clear filters
             </button>
           </div>
         </div>
-        <div className="subtabs">
-          {PERIODS.map(([id, label]) => (
-            <button key={id} className={period === id ? "on" : ""} onClick={() => setPeriod(id)}>
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="grid" style={{ marginBottom: 16, maxWidth: 520 }}>
-          <div>
-            <label>Report date</label>
-            <input type="date" value={refDate} onChange={(e) => setRefDate(e.target.value || isoToday())} />
-          </div>
-          <div>
-            <label>Period</label>
-            <select value={period} onChange={(e) => setPeriod(e.target.value || "monthly")}>
-              {PERIODS.map(([id, label]) => (
-                <option key={id} value={id}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="kpis">
-          <div className="kpi">
-            <span>Jobs in view</span>
-            <b>{shown.length}</b>
-          </div>
-          <div className="kpi">
-            <span>Closed (invoiced)</span>
-            <b>{closed.length}</b>
-          </div>
-          <div className="kpi">
-            <span>Certificates</span>
-            <b>{certCount}</b>
-          </div>
-          <div className="kpi">
-            <span>Customers</span>
-            <b>{shownCustomers.length}</b>
-          </div>
-          <div className="kpi">
-            <span>Expiring in 30 days</span>
-            <b>{expiringSoon.length}</b>
-          </div>
-        </div>
-        {perms.has("Invoice:monitor") && <InvoiceMonitoringSection />}
+        <p className="muted" style={{ marginTop: 0 }}>
+          {certCount} certificate{certCount === 1 ? "" : "s"} · {shownCustomers.length} customer{shownCustomers.length === 1 ? "" : "s"} · {expiringSoon.length} expiring in 30 days
+        </p>
         <p>
           <button className="btn dark" disabled={!shown.length} onClick={() => downloadCsv(shown, period, refDate)}>
             Download Excel
@@ -247,7 +340,7 @@ export function Reports() {
           )}
         </p>
         {shown.length ? (
-          <Paged items={shown} resetKey={status + "|" + shown.length}>
+          <Paged items={shown} resetKey={status + "|" + period + "|" + refDate + "|" + from + "|" + to + "|" + invoiceNo + "|" + customer + "|" + trainer + "|" + q}>
             {(rows) => (
               <div className="table-wrap">
                 <table>
@@ -260,16 +353,19 @@ export function Reports() {
                       <th>Time</th>
                       <th>Status</th>
                       <th>Invoice no</th>
+                      {accountant && <th>Certificate numbers</th>}
                       <th>Trainees</th>
-                      <th>Certs</th>
+                      {!accountant && <th>Certs</th>}
                       <th>Expiry</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((j) => (
-                      <tr key={j.id}>
+                      <tr key={j.id} style={{ cursor: "pointer" }} onClick={() => openThisJob(j)}>
                         <td>
-                          <b>{j.jobNo}</b>
+                          <a href="#" className="job-link" onClick={(e) => (e.preventDefault(), openThisJob(j))}>
+                            <b>{j.jobNo}</b>
+                          </a>
                         </td>
                         <td>{jobCompanyNames(j).join(" · ") || j.customerName || "-"}</td>
                         <td>{j.course || "-"}</td>
@@ -280,9 +376,14 @@ export function Reports() {
                             {j.status === "Approved" ? "Issued" : j.status === "Rejected" ? "Returned" : j.status}
                           </span>
                         </td>
-                        <td>{j.invoiceNumber || "-"}</td>
+                        <td>{accountant ? <InvoiceCloseBox job={j} onSaved={reload} /> : j.invoiceNumber || "-"}</td>
+                        {accountant && (
+                          <td>
+                            {certificateNumbers(j).length ? certificateNumbers(j).join(", ") : "-"}
+                          </td>
+                        )}
                         <td>{(j.attendees || []).length}</td>
-                        <td>{(j.certificates || []).length}</td>
+                        {!accountant && <td>{(j.certificates || []).length}</td>}
                         <td>{jobExpiryDate(j) || "-"}</td>
                       </tr>
                     ))}
@@ -292,138 +393,15 @@ export function Reports() {
             )}
           </Paged>
         ) : (
-          <p className="muted">Nothing in this report.</p>
-        )}
-        {status !== "pending" && certs.length > 0 && (
-          <>
-            <h3 style={{ marginTop: 22 }}>Certificates in this period ({certs.length})</h3>
-            <Paged items={certs} resetKey={status + "|" + certs.length}>
-              {(rows) => (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Certificate No</th>
-                        <th>Trainee</th>
-                        <th>Customer</th>
-                        <th>Course</th>
-                        <th>Date</th>
-                        <th>Expiry</th>
-                        <th>Job</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map(({ c, j }) => (
-                        <tr key={c.id}>
-                          <td>
-                            <b>{c.certificateNo}</b>
-                          </td>
-                          <td>{c.name}</td>
-                          <td>{c.company || j.certificateUnder || j.customerName}</td>
-                          <td>{c.course}</td>
-                          <td>
-                            {c.trainingDate}
-                            {j.trainingTime ? " " + j.trainingTime : ""}
-                          </td>
-                          <td>{c.expiresOn}</td>
-                          <td>{j.jobNo}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Paged>
-          </>
+          <p className="muted">
+            {accountant
+              ? status === "invoiced"
+                ? "No invoiced jobs in this period."
+                : "No issued jobs are waiting for an invoice."
+              : "No jobs match. Choose All, or All dates."}
+          </p>
         )}
       </div>
-    </>
-  );
-}
-
-interface InvoiceStats {
-  approved: number;
-  pendingInvoice: number;
-  closed: number;
-  jobs: {
-    id: string;
-    jobNo: string;
-    customerName: string;
-    course?: string;
-    status: string;
-    invoiceNumber?: string;
-    closedBy?: string;
-    closedAt?: string;
-  }[];
-}
-
-export function InvoiceMonitoringSection() {
-  const { loading, data } = usePageData(async () => {
-    try {
-      return await api<InvoiceStats>("GET", "/api/training/invoice-stats");
-    } catch (err) {
-      console.error("Failed to load invoice stats:", err);
-      return null;
-    }
-  });
-  if (loading) return <div>Loading invoice statistics...</div>;
-  if (!data) return <div>Error loading invoice statistics</div>;
-  const fmt = (d?: string) => (d ? new Date(d).toLocaleDateString() : "-");
-  return (
-    <>
-      <div className="sect">Invoice Monitoring (Super Admin)</div>
-      <p className="hint">Monitor invoice workflow across all jobs</p>
-      <div className="kpis" style={{ marginBottom: 16 }}>
-        <div className="kpi">
-          <span>Approved Jobs</span>
-          <b style={{ color: "#007acc" }}>{data.approved}</b>
-        </div>
-        <div className="kpi">
-          <span>Pending Invoice</span>
-          <b style={{ color: "#ff8c00" }}>{data.pendingInvoice}</b>
-        </div>
-        <div className="kpi">
-          <span>Closed Jobs</span>
-          <b style={{ color: "#28a745" }}>{data.closed}</b>
-        </div>
-      </div>
-      {data.jobs.length > 0 && (
-        <>
-          <div className="sect">Recent Invoice Activity</div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Job No</th>
-                  <th>Customer</th>
-                  <th>Course</th>
-                  <th>Status</th>
-                  <th>Invoice #</th>
-                  <th>Closed By</th>
-                  <th>Closed Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.jobs.map((j) => (
-                  <tr key={j.id}>
-                    <td>
-                      <strong>{j.jobNo}</strong>
-                    </td>
-                    <td>{j.customerName}</td>
-                    <td>{j.course}</td>
-                    <td>
-                      <span className={`chip ${j.status === "Closed" ? "closed" : "approved"}`}>{j.status}</span>
-                    </td>
-                    <td>{j.invoiceNumber || "-"}</td>
-                    <td>{j.closedBy || "-"}</td>
-                    <td>{fmt(j.closedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
     </>
   );
 }

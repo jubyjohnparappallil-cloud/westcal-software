@@ -3,8 +3,10 @@ import type { Attendee, Job } from "../types";
 import { apiBase, downloadBlob, fapi } from "./api";
 import { Capture } from "./Capture";
 import { chipClass, fieldDate, isTrainer, isTrainingJob, statusLabel, useField } from "./FieldApp";
-import { formatEidLocal, ocrEmiratesCard, prepareIdPhoto, shrinkImage } from "./ocr";
+import { formatEidLocal, imageForRead, ocrEmiratesCard, prepareIdPhoto, shrinkImage } from "./ocr";
+import { usePhotoCrop } from "../components/PhotoCropper";
 import { Pad, type PadHandle } from "./Pad";
+import { editCourseChoices, printedTrNo } from "../lib/jobs";
 
 type Section = "details" | "attendance" | "feedback";
 type Download = (path: string, name: string, done?: string) => Promise<void>;
@@ -162,7 +164,7 @@ function Details({ j, canWork, reload }: { j: Job; canWork: boolean; reload: () 
         <h3>Job details</h3>
         <div className="row" style={{ marginBottom: 12 }}>
           <h2 className="grow" style={{ margin: 0 }}>
-            {displayJobNo(j.jobNo)}
+            {isTrainingJob(j) ? printedTrNo(j) : displayJobNo(j.jobNo)}
           </h2>
           <span className={chipClass(j.status)}>{statusLabel(j.status)}</span>
         </div>
@@ -351,16 +353,19 @@ export function Attendance({
   const { session, toast, openJob } = useField();
   const s = sheetView(j);
   const [captureKey, setCaptureKey] = useState(0);
+  const bulkFiles = useRef<File[]>([]);
   const [rowEdit, setRowEdit] = useState<{ id: string; focusEid: boolean; eid?: string } | null>(null);
   const [companyDraft, setCompanyDraft] = useState(s.invoiced);
   const [certifiedDraft, setCertifiedDraft] = useState(s.certifiedBy);
   const [personCompany, setPersonCompany] = useState<Record<string, string>>({});
+  const [pendingBack, setPendingBack] = useState<{ id: string; employer: string } | null>(null);
   const [sigPreview, setSigPreview] = useState<Record<string, string>>({});
   useEffect(() => {
     setCompanyDraft(s.invoiced);
     setCertifiedDraft(s.certifiedBy);
   }, [j.id, s.invoiced, s.certifiedBy]);
   const [dropRow, setDropRow] = useState<string | null>(null);
+  const { crop, dialog: cropDialog } = usePhotoCrop();
   const [authorized, setAuthorized] = useState(
     j.authorizedBy || j.assigneeName || j.trainerName || session.displayName || "",
   );
@@ -426,9 +431,79 @@ export function Attendance({
     }
   }
 
-  async function replacePhoto(a: Attendee, file: File) {
+  async function uploadIdBack(a: Attendee, file: File) {
+    if (!file.type.startsWith("image/")) {
+      toast("Upload a photo of the ID back (JPG or PNG).");
+      return;
+    }
+    const cropped = await crop(file, "back");
+    if (!cropped) return;
     try {
-      const dataUrl = await shrinkImage(file);
+      const image = await shrinkImage(cropped, 1400);
+      await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { idCardBackDataUrl: image });
+      toast("Reading the employer on the ID back…");
+      const text = await ocrEmiratesCard([await imageForRead(cropped)]);
+      const fetched = text.trim()
+        ? await fapi<{ employer?: string }>("POST", `/api/training/${j.id}/id-fetch`, { ocrText: text })
+        : {};
+      const employer = (fetched.employer || "").trim();
+      if (!employer) {
+        toast("ID back saved. Could not read the Employer line — type Employed by in Edit.");
+        await reload();
+        return;
+      }
+      setPendingBack({ id: a.id, employer });
+      toast("Employer read from the ID back. Tick it to use it on the certificate.");
+      await reload();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  }
+
+  async function imageFile(dataUrl: string, name: string): Promise<File> {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    return new File([blob], name, { type: blob.type || "image/jpeg" });
+  }
+
+  async function adjustPhoto(a: Attendee, dataUrl: string) {
+    try {
+      const cropped = await crop(await imageFile(dataUrl, "photo.jpg"), "photo");
+      if (!cropped) return;
+      const next = await shrinkImage(cropped, 800);
+      await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { photoDataUrl: next });
+      toast("Photo updated.");
+      await reload();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  }
+
+  async function cropStoredId(a: Attendee) {
+    if (!a.idCardDataUrl) return;
+    try {
+      const cropped = await crop(await imageFile(a.idCardDataUrl, "id-card.jpg"), "id");
+      if (!cropped) return;
+      await replaceId(a, cropped, true);
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  }
+
+  async function cropStoredBack(a: Attendee) {
+    if (!a.idCardBackDataUrl) return;
+    try {
+      await uploadIdBack(a, await imageFile(a.idCardBackDataUrl, "id-back.jpg"));
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  }
+
+  async function replacePhoto(a: Attendee, file: File) {
+    const cropped = await crop(file, "photo");
+    if (!cropped) return;
+    try {
+      const dataUrl = await shrinkImage(cropped, 800);
       await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { photoDataUrl: dataUrl });
       toast("Photo updated.");
       await reload();
@@ -437,9 +512,11 @@ export function Attendance({
     }
   }
 
-  async function replaceId(a: Attendee, file: File) {
+  async function replaceId(a: Attendee, file: File, alreadyCropped = false) {
+    const cropped = alreadyCropped ? file : await crop(file, "id");
+    if (!cropped) return;
     try {
-      const { card, portrait, ocrCard } = await prepareIdPhoto(file);
+      const { card, portrait, ocrCard } = await prepareIdPhoto(cropped, { ocrSide: 1800, clarify: true });
       let name: string | undefined;
       let idOrVisaNo: string | undefined;
       let nationality: string | undefined;
@@ -463,14 +540,22 @@ export function Attendance({
       }
       await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, {
         idCardDataUrl: card,
-        photoDataUrl: portrait || card,
+        ...(a.photoDataUrl ? {} : { photoDataUrl: portrait || card }),
         ...(name ? { name } : {}),
         ...(idOrVisaNo ? { idOrVisaNo } : {}),
         ...(nationality ? { nationality } : {}),
         ...(dateOfBirth ? { dateOfBirth } : {}),
         autoFetched: !!idOrVisaNo,
       });
-      toast(idOrVisaNo ? "Photo saved and ID filled: " + idOrVisaNo : "Photo saved. Type the ID if it is missing.");
+      toast(
+        idOrVisaNo
+          ? a.photoDataUrl
+            ? "ID filled: " + idOrVisaNo + ". The cropped photo was kept."
+            : "Photo saved and ID filled: " + idOrVisaNo
+          : a.photoDataUrl
+            ? "ID saved. The cropped photo was kept."
+            : "Photo saved. Type the ID if it is missing.",
+      );
       await reload();
       setRowEdit({ id: a.id, focusEid: !idOrVisaNo, eid: idOrVisaNo });
     } catch (e) {
@@ -503,12 +588,8 @@ export function Attendance({
       return;
     }
     setCompanyDraft(name);
-    setPersonCompany(Object.fromEntries(j.attendees.map((a) => [a.id, name])));
     try {
       await fapi("POST", `/api/training/${j.id}/attendance-meta`, { sheetCompany: name });
-      await Promise.all(
-        j.attendees.map((a) => fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { company: name })),
-      );
       toast("Company updated on the attendance sheet.");
       await reload();
     } catch (e) {
@@ -542,6 +623,7 @@ export function Attendance({
 
   return (
     <>
+      {cropDialog}
       {j.status === "Rejected" && (
         <div className="card">
           <p className="err" style={{ margin: 0 }}>
@@ -552,7 +634,16 @@ export function Attendance({
       {canMark && (
         <div className="card">
           <h2>📱 Add Trainee</h2>
-          <Capture key={captureKey} job={j} onSaved={afterCaptureSaved} />
+          <Capture
+            key={captureKey}
+            job={j}
+            onSaved={afterCaptureSaved}
+            readEmployer={office}
+            startFiles={bulkFiles.current}
+            onBulkFiles={(files) => {
+              bulkFiles.current = files;
+            }}
+          />
         </div>
       )}
       <div className="card">
@@ -637,11 +728,7 @@ export function Attendance({
                   <input
                     value={companyDraft}
                     aria-label="Company"
-                    onChange={(e) => {
-                      const name = e.target.value;
-                      setCompanyDraft(name);
-                      setPersonCompany(Object.fromEntries(j.attendees.map((a) => [a.id, name])));
-                    }}
+                    onChange={(e) => setCompanyDraft(e.target.value)}
                     onBlur={() => saveSheetCompany(companyDraft)}
                   />
                 ) : (
@@ -700,7 +787,28 @@ export function Attendance({
                         {i + 1}. {a.name}
                       </b>
                       <div className="mini">EID: {a.idOrVisaNo || "re-upload ID or type it"}</div>
-                      <div className="mini">Company: {personCompany[a.id] ?? (a.company || companyDraft || "-")}</div>
+                      <div className="mini">Employed by: {personCompany[a.id] ?? (a.company || "-")}</div>
+                      {pendingBack?.id === a.id && (
+                        <label className="checkline" style={{ display: "block", marginTop: 6 }}>
+                          <input
+                            type="checkbox"
+                            onChange={async (e) => {
+                              if (!e.target.checked) return;
+                              try {
+                                await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, { company: pendingBack.employer });
+                                setPersonCompany((current) => ({ ...current, [a.id]: pendingBack.employer }));
+                                setPendingBack(null);
+                                toast("Certificate Employed by is now " + pendingBack.employer);
+                                await reload();
+                              } catch (err) {
+                                e.target.checked = false;
+                                toast((err as Error).message);
+                              }
+                            }}
+                          />{" "}
+                          Use <b>{pendingBack.employer}</b> as Employed by on the certificate
+                        </label>
+                      )}
                       <div className="mini">Certified to: {certifiedDraft || "-"}</div>
                       <div className="mini">{a.course || j.course || ""}</div>
                     </div>
@@ -715,6 +823,30 @@ export function Attendance({
                         >
                           {open ? "Close" : "Edit"}
                         </button>
+                        {office && a.idCardBackDataUrl && (
+                          <button type="button" className="btn ghost" onClick={() => cropStoredBack(a)}>
+                            Crop ID back
+                          </button>
+                        )}
+                        {office && (
+                          <label className="btn ghost" htmlFor={`idback_${a.id}`}>
+                            Upload ID back
+                          </label>
+                        )}
+                        {office && (
+                          <input
+                            id={`idback_${a.id}`}
+                            className="sr-only"
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = "";
+                              if (file) uploadIdBack(a, file);
+                            }}
+                          />
+                        )}
                         <label className="btn ghost" htmlFor={`repid_${a.id}`}>
                           Re-upload EID
                         </label>
@@ -729,6 +861,20 @@ export function Attendance({
                             if (file) replaceId(a, file);
                           }}
                         />
+                        {a.idCardDataUrl && (
+                          <button type="button" className="btn ghost" onClick={() => cropStoredId(a)}>
+                            Crop ID card
+                          </button>
+                        )}
+                        {(a.idCardDataUrl || a.photoDataUrl || a.extraPhotoDataUrl) && (
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            onClick={() => adjustPhoto(a, a.idCardDataUrl || a.photoDataUrl || a.extraPhotoDataUrl || "")}
+                          >
+                            Crop photo
+                          </button>
+                        )}
                         <label className="btn ghost" htmlFor={`repph_${a.id}`}>
                           New photo
                         </label>
@@ -1000,6 +1146,10 @@ function RowEdit({
     company: a.company || "",
     certifiedTo: certifiedTo || "",
   });
+  const choices = editCourseChoices(j, a);
+  const courseOptions = choices.options;
+  const [ticked, setTicked] = useState(choices.selected);
+  const savedPhoto = a.photoDataUrl || a.extraPhotoDataUrl || "";
   const [err, setErr] = useState("");
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1015,12 +1165,14 @@ function RowEdit({
     if (!name) return setErr("Name is required.");
     if (!company) return setErr("Company is required.");
     if (!certified) return setErr("Certified to is required.");
+    if (courseOptions.length > 1 && !ticked.length) return setErr("Tick the training course for this trainee.");
     try {
       await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, {
         name,
         idOrVisaNo: f.eid.trim(),
         mobileNumber,
         company,
+        courses: ticked,
       });
       if (certified !== certifiedTo.trim()) {
         await fapi("POST", `/api/training/${j.id}/attendance-meta`, { certifiedBy: certified });
@@ -1036,6 +1188,27 @@ function RowEdit({
 
   return (
     <div ref={box} style={{ marginTop: 10, textAlign: "left" }}>
+      {a.idCardDataUrl && (
+        <>
+          <label className="fl">Emirates ID card</label>
+          <img className="id-card-full" src={a.idCardDataUrl} alt="Emirates ID card" />
+        </>
+      )}
+      {a.idCardBackDataUrl && (
+        <>
+          <label className="fl">ID back</label>
+          <img className="id-card-full" src={a.idCardBackDataUrl} alt="ID back" />
+        </>
+      )}
+      {(a.idCardDataUrl || a.idCardBackDataUrl) && (
+        <p className="mini">Crop the photo, the ID card, or the ID back from the full picture.</p>
+      )}
+      {!a.idCardDataUrl && savedPhoto && (
+        <>
+          <label className="fl">Photo</label>
+          <img className="id-card-full" src={savedPhoto} alt="" />
+        </>
+      )}
       <label className="fl">Name</label>
       <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
       <label className="fl">Emirates ID</label>
@@ -1047,10 +1220,27 @@ function RowEdit({
       />
       <label className="fl">Phone</label>
       <input value={f.phone} inputMode="tel" onChange={(e) => setF({ ...f, phone: e.target.value })} />
-      <label className="fl">Company</label>
-      <input value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} />
+      <label className="fl">Employed by</label>
+      <input value={f.company} placeholder="Employer from the ID back" onChange={(e) => setF({ ...f, company: e.target.value })} />
       <label className="fl">Certified to</label>
       <input value={f.certifiedTo} onChange={(e) => setF({ ...f, certifiedTo: e.target.value })} />
+      {courseOptions.length > 0 && (
+        <>
+          <label className="fl">Training course *</label>
+          <div className="course-list">
+            {courseOptions.map((course) => (
+              <label className="course-pick" key={course}>
+                <input
+                  type="checkbox"
+                  checked={ticked.includes(course)}
+                  onChange={(e) => setTicked(e.target.checked ? [...ticked, course] : ticked.filter((item) => item !== course))}
+                />{" "}
+                {course}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
       <button type="button" className="btn ok" style={{ marginTop: 10 }} onClick={save}>
         Save update
       </button>

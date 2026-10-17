@@ -8,6 +8,7 @@ import "./env.js";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { createServer as createNetServer } from "node:net";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -27,6 +28,8 @@ import { attendancePublicHtml, sendAttendanceSheetPdf } from "./modules/training
 import { sendAssignedJobSheetPdf, sendContractReviewPdf, sendWorkPermitPdf } from "./modules/training/trainingForms.js";
 import { sendMappingProtocol } from "./modules/training/mappingProtocol.js";
 import { sendTrainingCertificatePdf, sendTrainingCertificateContentPdf, sendTrainingCertificateLayoutPdf, listCertificateDesigns, CERTIFICATE_DESIGNS_DIR, printedCertificateVerifyHtml } from "./modules/training/certificateTemplate.js";
+import { sendOldCertificateDocx } from "./modules/training/oldCertificateDocx.js";
+import { sendQannatiCertificateDocx } from "./modules/training/qannatiCertificateDocx.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 3000;
@@ -80,6 +83,7 @@ function seedRolePermissions(p: Platform): void {
     { module: "Inspection", action: "read" },
     { module: "Mapping", action: "create" },
     { module: "Mapping", action: "read" },
+    { module: "Mapping", action: "add_rows" },
     ...officeTraining,
   ]);
 
@@ -98,6 +102,7 @@ function seedRolePermissions(p: Platform): void {
     { module: "Mapping", action: "create" },
     { module: "Mapping", action: "read" },
     { module: "Mapping", action: "edit" },
+    { module: "Mapping", action: "add_rows" },
     { module: "Reports", action: "read" },
   ]);
 
@@ -113,6 +118,7 @@ function seedRolePermissions(p: Platform): void {
     { module: "Inspection", action: "read" },
     { module: "Mapping", action: "read" },
     { module: "Mapping", action: "edit" },
+    { module: "Mapping", action: "add_rows" },
     ...officeTraining,
   ]);
 
@@ -128,6 +134,7 @@ function seedRolePermissions(p: Platform): void {
     { module: "Inspection", action: "read" },
     { module: "Mapping", action: "create" },
     { module: "Mapping", action: "read" },
+    { module: "Mapping", action: "add_rows" },
     { module: "Training", action: "cancel" },
     { module: "Training", action: "attendance" },
     { module: "Reports", action: "read" },
@@ -234,26 +241,27 @@ function imagePixelSize(buf: Buffer): { w: number; h: number } | null {
   return null;
 }
 
-/** Wide uploads are Emirates ID scans. The face sits on the left; print only that. */
-function drawIdPhoto(doc: PDFDocument, buf: Buffer, photoX: number, photoY: number, photoSide: number): void {
+/** Print the whole photo in its own shape. A wide Emirates ID uses only the face. */
+function drawIdPhoto(doc: PDFDocument, buf: Buffer, photoX: number, photoY: number, photoW: number, photoH: number): void {
   const size = imagePixelSize(buf);
   const idCard = size && size.w > size.h * 1.15;
   doc.save();
-  doc.rect(photoX, photoY, photoSide, photoSide).clip();
+  doc.rect(photoX, photoY, photoW, photoH).fill("#ffffff");
+  doc.rect(photoX, photoY, photoW, photoH).clip();
   if (idCard && size) {
-    const fx = 0.086;
-    const fy = 0.335;
-    const fw = 0.184;
-    const fh = 0.348;
+    const fx = 0.05;
+    const fy = 0.22;
+    const fw = 0.26;
+    const fh = 0.52;
     const regionW = size.w * fw;
     const regionH = size.h * fh;
-    const scale = Math.max(photoSide / regionW, photoSide / regionH);
-    const dx = photoX - fx * size.w * scale + (photoSide - regionW * scale) / 2;
-    const dy = photoY - fy * size.h * scale + (photoSide - regionH * scale) / 2;
+    const scale = Math.min(photoW / regionW, photoH / regionH);
+    const dx = photoX + (photoW - regionW * scale) / 2 - fx * size.w * scale;
+    const dy = photoY + (photoH - regionH * scale) / 2 - fy * size.h * scale;
     doc.image(buf, dx, dy, { width: size.w * scale, height: size.h * scale });
   } else {
     doc.image(buf, photoX, photoY, {
-      cover: [photoSide, photoSide],
+      cover: [photoW, photoH],
       align: "center",
       valign: "center",
     });
@@ -292,17 +300,18 @@ async function sendTrainingCardPdf(
 
   const navy = "#1e4b8f";
   const ink = "#111111";
-  try { doc.image(logo, W * 0.62, H * 0.025, { fit: [W * 0.28, H * 0.14], align: "right" }); } catch { /* logo optional */ }
+  try { doc.image(logo, 262, 4, { fit: [172, 62], align: "right" }); } catch { /* logo optional */ }
 
-  const photoSide = 120;
-  const photoX = 314;
-  const photoY = 66;
+  const photoW = 68;
+  const photoH = 90;
+  const photoX = 362;
+  const photoY = 112;
   const textLeft = W * 0.24;
   const textRight = photoX - 10;
   const textW = textRight - textLeft;
   const name = (c.name || "").toUpperCase();
-  const nameLeft = W * 0.19;
-  const nameW = photoX - 6 - nameLeft;
+  const nameW = 270;
+  const nameLeft = (W - nameW) / 2;
   doc.font("Helvetica-Bold");
   let nameSize = 22;
   while (nameSize > 15 && doc.fontSize(nameSize).widthOfString(name) > nameW) nameSize -= 0.5;
@@ -322,54 +331,57 @@ async function sendTrainingCardPdf(
   doc.fillColor(ink).font("Helvetica-Bold").fontSize(tradeSize)
     .text(trade, textLeft, tradeY, { width: textW, align: "center", height: tradeSize + 4 });
 
-  const companyChoices = [trainee?.company, job.certificateUnder, c.company]
+  const companyChoices = [trainee?.company, job.certificateUnder, c.company, job.customerName, ...(job.companies || [])]
     .map((name) => (name || "").trim())
     .filter((name) => name.length > 1)
     .sort((a, b) => b.length - a.length);
-  const company = companyChoices[0] || (job.customerName || "").trim();
+  const company = companyChoices[0] || "";
   const rows: Array<[string, string]> = [
     ["Certificate No", c.certificateNo || ""],
     ["Company", company],
     ["Training Date", c.trainingDate || ""],
     ["Expires on", c.expiresOn || ""],
   ];
-  const labelSize = 12;
+  const labelSize = 11;
+  const colonW = 14;
   doc.font("Helvetica-Bold").fontSize(labelSize);
-  const labelW = Math.ceil(doc.widthOfString("Certificate No")) + 10;
-  const valueX = textLeft + labelW;
+  const labelW = Math.ceil(doc.widthOfString("Certificate No")) + 8;
+  const valueX = textLeft + labelW + colonW;
   const valueW = textRight - valueX;
   let y = Math.max(H * 0.47, tradeY + tradeSize + 10);
   for (const [label, value] of rows) {
-    const valueText = `: ${value}`;
-    const allowWrap = label === "Company";
-    doc.font("Helvetica-Bold");
-    let size = 12;
-    while (size > (allowWrap ? 9 : 6) && doc.fontSize(size).widthOfString(valueText) > valueW) size -= 0.4;
-    let wrap = false;
-    let rowH = 15;
-    if (allowWrap && doc.fontSize(size).widthOfString(valueText) > valueW) {
-      wrap = true;
-      size = 10;
-      while (size > 8 && doc.fontSize(size).heightOfString(valueText, { width: valueW }) > size * 2.4) size -= 0.4;
-      rowH = Math.min(30, doc.fontSize(size).heightOfString(valueText, { width: valueW }) + 2);
+    doc.font("Helvetica-Bold").fontSize(labelSize).fillColor(ink);
+    const rowLabelW = label === "Company" ? Math.ceil(doc.widthOfString("Company")) + 6 : labelW;
+    const rowValueX = textLeft + rowLabelW + colonW;
+    const rowValueW = (label === "Company" ? photoX - 14 : textRight) - rowValueX;
+    let size = labelSize;
+    let companyLines = 1;
+    if (label === "Company") {
+      size = 7.5;
+      doc.font("Helvetica-Bold").fontSize(size);
+      if (doc.widthOfString(value) > rowValueW) companyLines = 2;
     }
+    const rowH = companyLines === 2 ? doc.font("Helvetica-Bold").fontSize(size).heightOfString(value, { width: rowValueW }) + 1 : 14;
     doc.font("Helvetica-Bold").fontSize(labelSize).fillColor(ink)
-      .text(label, textLeft, y, { width: labelW, height: 15, lineBreak: false });
-    doc.fillColor(ink).font("Helvetica-Bold").fontSize(size)
-      .text(valueText, valueX, y + (wrap ? 0 : (labelSize - size) * 0.15), {
-        width: valueW,
-        height: rowH,
-        lineBreak: wrap,
-      });
-    y += wrap ? Math.max(17, rowH + 2) : 17;
+      .text(label, textLeft, y, { width: rowLabelW, height: 14, lineBreak: false });
+    doc.text(":", textLeft + rowLabelW, y, { width: colonW, height: 14, lineBreak: false });
+    doc.font("Helvetica-Bold").fontSize(size).text(value, rowValueX, y + (companyLines === 1 ? (labelSize - size) * 0.15 : 0), {
+      width: rowValueW,
+      height: rowH,
+      lineBreak: companyLines === 2,
+    });
+    y += companyLines === 2 ? Math.max(16, rowH + 2) : 16;
   }
 
   const photoSrc = trainee?.photoDataUrl || trainee?.extraPhotoDataUrl || "";
   if (photoSrc) {
-    try { drawIdPhoto(doc, dataUrlBuffer(photoSrc), photoX, photoY, photoSide); } catch { /* photo skipped */ }
+    try { drawIdPhoto(doc, dataUrlBuffer(photoSrc), photoX, photoY, photoW, photoH); } catch { /* photo skipped */ }
   }
-  doc.rect(photoX, photoY, photoSide, photoSide).lineWidth(1.6).strokeColor("#d4a017").stroke();
+  doc.rect(photoX, photoY, photoW, photoH).lineWidth(1.8).strokeColor("#d4a017").stroke();
 
+  const qrSize = 48;
+  const qrX = 124;
+  const qrY = 216;
   if (verifyUrl) {
     const qrPng = await QRCode.toBuffer(verifyUrl, {
       errorCorrectionLevel: "M",
@@ -377,11 +389,9 @@ async function sendTrainingCardPdf(
       width: 280,
       color: { dark: "#000000", light: "#ffffff" },
     });
-    doc.rect(W * 0.30, H * 0.72, W * 0.26, H * 0.26).fill("#ffffff");
-    doc.image(qrPng, W * 0.36, H * 0.76, { width: 52, height: 52 });
+    doc.rect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4).fill("#ffffff");
+    doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
   }
-  // The artwork address is a tiny picture. Cover it and print bold type.
-  doc.rect(262, 210, 170, 80).fill("#f7fbfd");
   const addressLines = [
     "Westcal Instrumentation and",
     "Calibration Services LLC",
@@ -391,10 +401,134 @@ async function sendTrainingCardPdf(
     "training@westcal.ae",
     "https://westcal.ae/",
   ];
-  doc.font("Helvetica-Bold").fontSize(9).fillColor(ink);
+  const addressRight = photoX + photoW - 2;
+  const addressW = 188;
+  const addressX = addressRight - addressW;
+  doc.font("Helvetica-Bold");
+  let addrSize = 8;
+  const widest = addressLines.reduce((a, b) => (a.length >= b.length ? a : b));
+  while (addrSize > 7.5 && doc.fontSize(addrSize).widthOfString(widest) > addressW) addrSize -= 0.25;
+  const lineH = addrSize + 1.7;
+  const addressY = photoY + photoH + 5;
+  doc.rect(addressX - 4, photoY + photoH - 2, addressRight - addressX + 10, H - (photoY + photoH) + 2).fill("#f7fbfd");
+  doc.fillColor("#000000").font("Helvetica-Bold").fontSize(addrSize);
+  const addrOpts = { width: addressW, align: "left" as const, height: lineH, lineBreak: false };
   addressLines.forEach((line, i) => {
-    doc.text(line, 266, 214 + i * 10.2, { width: 160, height: 11, lineBreak: false });
+    const lineY = addressY + i * lineH;
+    doc.text(line, addressX, lineY, addrOpts);
+    doc.text(line, addressX + 0.35, lineY, addrOpts);
   });
+  doc.end();
+}
+
+function classicCardDate(value: string | undefined): string {
+  const raw = String(value ?? "").trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : raw;
+}
+
+/** Older Word ID card. The verify QR sits in the open space left of the photo. */
+async function sendClassicCardPdf(
+  res: ServerResponse,
+  job: TrainingJob,
+  c: TrainingCertificate,
+  verifyUrl?: string,
+): Promise<void> {
+  const trainee = job.attendees.find((item) => item.id === c.attendeeId);
+  const logo = await readFile(join(__dirname, "ui", "logo.jpg"));
+  const W = 450;
+  const H = 252;
+  const doc = new PDFDocument({ size: [W, H], margin: 0, info: { Title: `${c.certificateNo} classic ID card` } });
+  res.writeHead(200, {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="${c.certificateNo.replace(/[^a-zA-Z0-9_-]/g, "_")}-classic-card.pdf"`,
+  });
+  doc.pipe(res);
+  doc.rect(0, 0, W, H).fill("#ffffff");
+
+  const blue = "#4f81bc";
+  const gold = "#e8a427";
+  const ink = "#111111";
+  const footerH = 48;
+  const footerY = H - footerH - 6;
+  const photoW = 68;
+  const photoH = 74;
+  const photoX = W - 18 - photoW;
+  const photoY = footerY - photoH - 6;
+
+  doc.fillColor(ink).font("Helvetica-Bold").fontSize(9);
+  ["T: +971 4 576 2773", "M: +971 56 665 4326", "E: training@westcal.ae", "W: www.westcal.ae"].forEach((line, i) => {
+    const lineY = 12 + i * 13;
+    doc.text(line, 18, lineY, { lineBreak: false });
+    doc.text(line, 18.35, lineY, { lineBreak: false });
+  });
+  const logoX = W - 16 - 128;
+  const logoY = 6;
+  const logoH = 50;
+  try { doc.image(logo, logoX, logoY, { fit: [128, logoH], align: "right" }); } catch { /* logo optional */ }
+
+  const companyChoices = [trainee?.company, job.certificateUnder, c.company, job.customerName, ...(job.companies || [])]
+    .map((name) => (name || "").trim())
+    .filter((name) => name.length > 1)
+    .sort((a, b) => b.length - a.length);
+  const rows: Array<[string, string]> = [
+    ["Name:", (c.name || "").toUpperCase()],
+    ["Company:", (companyChoices[0] || "").toUpperCase()],
+    ["Course:", (c.course || "").toUpperCase()],
+    ["Training Date:", classicCardDate(c.trainingDate)],
+    ["Expires On:", classicCardDate(c.expiresOn)],
+    ["Certificate No:", c.certificateNo || ""],
+  ];
+  const labelX = 18;
+  const valueX = 118;
+  const qrSize = 54;
+  const qrX = photoX - qrSize - 8;
+  const qrY = footerY - qrSize - 6;
+  const fullW = photoX - valueX - 10;
+  const besideQrW = qrX - valueX - 8;
+  const rowWidths = rows.map((_, index) => (index >= 2 ? besideQrW : fullW));
+  const rowHeights = rows.map(([, value], index) => {
+    doc.font("Helvetica-Bold").fontSize(9);
+    return doc.widthOfString(value) > rowWidths[index] ? 20 : 16;
+  });
+  const blockH = rowHeights.reduce((sum, height) => sum + height, 0);
+  let y = Math.max(78, footerY - 8 - blockH);
+  rows.forEach(([label, value], index) => {
+    const rowH = rowHeights[index];
+    const size = rowH > 16 ? 7.5 : 9;
+    const valueOpts = { width: rowWidths[index], height: rowH, lineBreak: rowH > 16 };
+    doc.fillColor(ink).font("Helvetica-Bold").fontSize(9);
+    doc.text(label, labelX, y, { width: 96, height: 14, lineBreak: false });
+    doc.text(label, labelX + 0.3, y, { width: 96, height: 14, lineBreak: false });
+    doc.fontSize(size);
+    doc.text(value, valueX, y, valueOpts);
+    doc.text(value, valueX + 0.3, y, valueOpts);
+    y += rowH;
+  });
+
+  const photoSrc = trainee?.photoDataUrl || trainee?.extraPhotoDataUrl || "";
+  if (photoSrc) {
+    try { drawIdPhoto(doc, dataUrlBuffer(photoSrc), photoX, photoY, photoW, photoH); } catch { /* photo skipped */ }
+  }
+  doc.rect(photoX, photoY, photoW, photoH).lineWidth(1.2).strokeColor(gold).stroke();
+
+  if (verifyUrl) {
+    const qrPng = await QRCode.toBuffer(verifyUrl, {
+      errorCorrectionLevel: "M",
+      margin: 2,
+      width: 420,
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+    doc.rect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 6).fill("#ffffff");
+    doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
+  }
+
+  doc.roundedRect(14, footerY, W - 28, footerH, 6).fill(blue);
+  doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(8.5)
+    .text("WESTCAL INSTRUMENTATION AND CALIBRATION SERVICES LLC", 20, footerY + 12, { width: W - 40, align: "center", lineBreak: false });
+  doc.fontSize(8.5).text("DUBAI – UNITED ARAB EMIRATES", 20, footerY + 26, { width: W - 40, align: "center", lineBreak: false });
+  doc.rect(0, 0, 9, H).fill(blue);
+  doc.rect(W - 9, 0, 9, H).fill(gold);
   doc.end();
 }
 
@@ -484,6 +618,11 @@ function lanBase(): string {
 
 function reachableBase(_req?: IncomingMessage): string {
   return lanBase();
+}
+
+/** Short scan link. A long address makes the QR too fine for a phone camera. */
+function verifyLink(verificationRef: string): string {
+  return `${lanBase()}/v/${encodeURIComponent(verificationRef.slice(0, 12))}`;
 }
 
 function handleError(res: ServerResponse, err: unknown): void {
@@ -785,7 +924,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       await sendWebApp("/app/", res);
       return;
     }
-    const verifyQrMatch = path.match(/^\/verify\/([^/]+)\/qr\.png$/);
+    const verifyQrMatch = path.match(/^\/(?:verify|v)\/([^/]+)\/qr\.png$/);
     if (method === "GET" && verifyQrMatch) {
       const ref = decodeURIComponent(verifyQrMatch[1]);
       const found = platform.training.findCertificateByVerificationRef(ref);
@@ -794,7 +933,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         res.end("certificate not found");
         return;
       }
-      const verifyUrl = `${reachableBase(req)}/verify/${encodeURIComponent(ref)}`;
+      const verifyUrl = verifyLink(found.certificate.verificationRef);
       const png = await QRCode.toBuffer(verifyUrl, {
         errorCorrectionLevel: "M",
         margin: 2,
@@ -805,7 +944,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       res.end(png);
       return;
     }
-    const verifyMatch = path.match(/^\/verify\/([^/]+)$/);
+    const verifyMatch = path.match(/^\/(?:verify|v)\/([^/]+)$/);
     if (method === "GET" && verifyMatch) {
       const found = platform.training.findCertificateByVerificationRef(
         decodeURIComponent(verifyMatch[1])
@@ -947,6 +1086,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       res.end(img);
       return;
     }
+    if (method === "GET" && (path === "/certificate-signature.png" || path === "/certificate-company-seal.png")) {
+      const name = path.slice(1);
+      const img = await readFile(join(__dirname, "ui", name));
+      res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable" });
+      res.end(img);
+      return;
+    }
     if (method === "GET" && path === "/certificate-achievement-blank-screen.jpg") {
       const img = await readFile(join(__dirname, "ui", "certificate-achievement-blank-screen.jpg"));
       res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=31536000, immutable" });
@@ -984,7 +1130,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const roles = platform.permissions.getUserRoleIds(userId);
       const perms = [...platform.permissions.getEffectivePermissions(userId)];
       const user = platform.users.getUser(userId);
-      sendJson(res, 200, { token, userId, displayName: user.displayName, roles, perms, modules: allowedServices(userId) });
+      sendJson(res, 200, { token, userId, identifier: user.identifier, displayName: user.displayName, roles, perms, modules: allowedServices(userId) });
       return;
     }
     // --- public: Super Admin self-registration with email OTP ---
@@ -1050,6 +1196,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const user = platform.users.getUser(userId);
       sendJson(res, 200, {
         userId,
+        identifier: user.identifier,
         displayName: user.displayName,
         roles: platform.permissions.getUserRoleIds(userId),
         perms: [...platform.permissions.getEffectivePermissions(userId)],
@@ -1110,8 +1257,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       
       // Update user properties
       if (b.displayName) user.displayName = String(b.displayName).trim();
-      if (b.identifier) user.identifier = String(b.identifier).trim();
-      if (b.email !== undefined) user.email = String(b.email).trim() || undefined;
+      if (b.identifier) platform.users.setIdentifier(user.id, String(b.identifier));
+      if (b.email !== undefined) platform.users.setEmail(user.id, String(b.email));
       if (Array.isArray(b.roleIds)) {
         const prev = [...user.roleIds].sort().join(",");
         platform.users.setRoleIds(user.id, b.roleIds);
@@ -1125,8 +1272,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     if (method === "POST" && userPwMatch) {
       requireSuper(userId);
       const pw = String((await readBody(req)).password ?? "");
-      if (pw.length < 6 || !/[a-z]/i.test(pw) || !/[^a-z0-9]/i.test(pw)) {
-        throw new ValidationError("Password needs 6+ characters with a letter and a special character", "password");
+      if (pw.length < 6) {
+        throw new ValidationError("Password must be at least 6 characters", "password");
       }
       platform.users.setCredential(userPwMatch[1], pw);
       sendJson(res, 200, { ok: true });
@@ -1176,7 +1323,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // Training list — anyone with Training:read. Heavy images are omitted;
     // GET /api/training/:id returns the full job when a record is opened.
     if (method === "GET" && path === "/api/training") {
-      requirePerm(userId, "Training", "read");
+      requireAnyPerm(userId, [["Training", "read"], ["Reports", "read"]]);
       let jobs = platform.training.listJobs();
       const roles = platform.permissions.getUserRoleIds(userId);
       // Trainers and Site Engineers only see jobs assigned to them
@@ -1200,8 +1347,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
     const oneJob = path.match(/^\/api\/training\/([^/]+)$/);
-    if (method === "GET" && oneJob && oneJob[1] !== "next-job-order" && oneJob[1] !== "invoice-stats") {
-      requirePerm(userId, "Training", "read");
+    if (method === "GET" && oneJob && oneJob[1] !== "next-job-order" && oneJob[1] !== "invoice-stats" && oneJob[1] !== "numbering") {
+      requireAnyPerm(userId, [["Training", "read"], ["Reports", "read"]]);
       requireAssignedIfFieldUser(userId, oneJob[1]);
       let job: TrainingJob = platform.training.getJob(oneJob[1]);
       requireService(userId, job.serviceType);
@@ -1227,10 +1374,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       sendJson(res, 200, { jobOrderNo: platform.training.peekNextJobOrderNo(serviceType) });
       return;
     }
+    if (method === "GET" && path === "/api/training/numbering") {
+      requireSuper(userId);
+      sendJson(res, 200, platform.training.numberingPreview());
+      return;
+    }
+    if (method === "PUT" && path === "/api/training/numbering") {
+      requireSuper(userId);
+      sendJson(res, 200, platform.training.setNextTrainingOrder(String((await readBody(req)).nextTr ?? "")));
+      return;
+    }
     const certificateEdit = path.match(/^\/api\/training\/([^/]+)\/certificates\/([^/]+)$/);
     if (method === "PATCH" && certificateEdit) {
       requirePerm(userId, "Certificates", "edit");
-      sendJson(res, 200, platform.training.editCertificate(certificateEdit[1], certificateEdit[2], await readBody(req)));
+      sendJson(res, 200, await platform.training.editCertificate(certificateEdit[1], certificateEdit[2], await readBody(req)));
       return;
     }
     const certificatePdfMatch = path.match(/^\/api\/training\/([^/]+)\/certificates\/([^/]+)\/pdf$/);
@@ -1247,7 +1404,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         res,
         job,
         certificate,
-        `${reachableBase(req)}/verify/${encodeURIComponent(certificate.verificationRef)}`
+        verifyLink(certificate.verificationRef)
       );
       return;
     }
@@ -1265,7 +1422,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         res,
         job,
         certificate,
-        `${reachableBase(req)}/verify/${encodeURIComponent(certificate.verificationRef)}`,
+        verifyLink(certificate.verificationRef),
         true
       );
       return;
@@ -1297,7 +1454,66 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         res,
         job,
         certificate,
-        `${reachableBase(req)}/verify/${encodeURIComponent(certificate.verificationRef)}`
+        verifyLink(certificate.verificationRef)
+      );
+      return;
+    }
+    const certificateContentNoPhotoMatch = path.match(/^\/api\/training\/([^/]+)\/certificates\/([^/]+)\/content-nophoto-pdf$/);
+    if (method === "GET" && certificateContentNoPhotoMatch) {
+      requireAnyPerm(userId, [["Certificates", "read"], ["Certificates", "edit"]]);
+      requireAssignedIfFieldUser(userId, certificateContentNoPhotoMatch[1]);
+      const job = platform.training.getJob(certificateContentNoPhotoMatch[1]);
+      const certificate = job.certificates.find((item) => item.id === certificateContentNoPhotoMatch[2]);
+      if (!certificate) {
+        sendJson(res, 404, { code: "NotFoundError", message: "certificate not found" });
+        return;
+      }
+      await sendTrainingCertificateContentPdf(
+        res,
+        job,
+        certificate,
+        verifyLink(certificate.verificationRef),
+        true
+      );
+      return;
+    }
+    const oldCertificateDocxMatch = path.match(/^\/api\/training\/([^/]+)\/certificates\/([^/]+)\/old-docx$/);
+    if (method === "GET" && oldCertificateDocxMatch) {
+      requireAnyPerm(userId, [["Certificates", "read"], ["Certificates", "edit"]]);
+      requireAssignedIfFieldUser(userId, oldCertificateDocxMatch[1]);
+      const job = platform.training.getJob(oldCertificateDocxMatch[1]);
+      const certificate = job.certificates.find((item) => item.id === oldCertificateDocxMatch[2]);
+      if (!certificate) {
+        sendJson(res, 404, { code: "NotFoundError", message: "certificate not found" });
+        return;
+      }
+      await sendOldCertificateDocx(
+        res,
+        job,
+        certificate,
+        certificate.verificationRef
+          ? verifyLink(certificate.verificationRef)
+          : undefined,
+      );
+      return;
+    }
+    const specialCertificateDocxMatch = path.match(/^\/api\/training\/([^/]+)\/certificates\/([^/]+)\/special-docx$/);
+    if (method === "GET" && specialCertificateDocxMatch) {
+      requirePerm(userId, "Certificates", "edit");
+      requireAssignedIfFieldUser(userId, specialCertificateDocxMatch[1]);
+      const job = platform.training.getJob(specialCertificateDocxMatch[1]);
+      const certificate = job.certificates.find((item) => item.id === specialCertificateDocxMatch[2]);
+      if (!certificate) {
+        sendJson(res, 404, { code: "NotFoundError", message: "certificate not found" });
+        return;
+      }
+      await sendQannatiCertificateDocx(
+        res,
+        job,
+        certificate,
+        certificate.verificationRef
+          ? verifyLink(certificate.verificationRef)
+          : undefined,
       );
       return;
     }
@@ -1315,7 +1531,27 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         res,
         job,
         certificate,
-        `${reachableBase(req)}/verify/${encodeURIComponent(certificate.verificationRef)}`
+        verifyLink(certificate.verificationRef)
+      );
+      return;
+    }
+    const classicCardPdfMatch = path.match(/^\/api\/training\/([^/]+)\/certificates\/([^/]+)\/classic-card-pdf$/);
+    if (method === "GET" && classicCardPdfMatch) {
+      requireAnyPerm(userId, [["Certificates", "read"], ["Certificates", "edit"]]);
+      requireAssignedIfFieldUser(userId, classicCardPdfMatch[1]);
+      const job = platform.training.getJob(classicCardPdfMatch[1]);
+      const certificate = job.certificates.find((item) => item.id === classicCardPdfMatch[2]);
+      if (!certificate) {
+        sendJson(res, 404, { code: "NotFoundError", message: "certificate not found" });
+        return;
+      }
+      await sendClassicCardPdf(
+        res,
+        job,
+        certificate,
+        certificate.verificationRef
+          ? verifyLink(certificate.verificationRef)
+          : undefined,
       );
       return;
     }
@@ -1382,6 +1618,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       requirePerm(userId, "Training", "create");
       const b = await readBody(req);
       requireService(userId, b.serviceType);
+      const roles = platform.permissions.getUserRoleIds(userId);
+      const maySetOrder = roles.includes(ROLES.SUPER_ADMIN);
       const job = platform.training.createJob({
         serviceType: b.serviceType, location: b.location,
         course: b.course, courses: b.courses, customerName: b.customerName, companies: b.companies,
@@ -1393,6 +1631,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         address: b.address, directionUrl: b.directionUrl, trnNo: b.trnNo, contactNameNumber: b.contactNameNumber,
         salesPerson: b.salesPerson, standardReference: b.standardReference,
         typeOfTraining: b.typeOfTraining, clientRequirements: b.clientRequirements,
+        jobOrderNo: maySetOrder ? b.jobOrderNo : undefined,
         workStatus: b.workStatus,
         requiredDateForService: b.requiredDateForService, handedOverTo: b.handedOverTo,
         workCodeTraining: b.workCodeTraining, workCodeCertification: b.workCodeCertification,
@@ -1426,11 +1665,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     if (method === "PATCH" && editMatch) {
       const existing = platform.training.getJob(editMatch[1]);
       if ((existing.serviceType || "Training") === "Mapping") {
-        requireAnyPerm(userId, [["Training", "edit"], ["Mapping", "edit"]]);
+        requireAnyPerm(userId, [["Training", "edit"], ["Mapping", "edit"], ["Mapping", "create"]]);
       } else {
         requirePerm(userId, "Training", "edit");
       }
       const b = await readBody(req);
+      if (!platform.permissions.getUserRoleIds(userId).includes(ROLES.SUPER_ADMIN)) {
+        delete b.jobOrderNo;
+      }
       requireAssignedIfFieldUser(userId, editMatch[1]);
       requireEditable(userId, editMatch[1]);
       sendJson(res, 200, platform.training.editJob(editMatch[1], b));
@@ -1502,7 +1744,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     
     // Office staff pick who to assign — trainers and site engineers only.
     if (method === "GET" && path === "/api/assignees") {
-      requireAnyPerm(userId, [["Training", "create"], ["Training", "assign"], ["Training", "edit"]]);
+      requireAnyPerm(userId, [["Training", "create"], ["Training", "assign"], ["Training", "edit"], ["Mapping", "create"], ["Mapping", "edit"]]);
       if (isFieldOnly(userId)) throw new AuthorizationError("Office staff only");
       
       const allUsers = platform.users.listUsers();
@@ -1530,6 +1772,46 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         });
       
       sendJson(res, 200, assignees);
+      return;
+    }
+
+    // Mapping / office staff can add a Site Engineer from the job form without Users:create.
+    if (method === "POST" && path === "/api/assignees") {
+      requireAnyPerm(userId, [["Mapping", "create"], ["Training", "create"], ["Training", "assign"]]);
+      if (isFieldOnly(userId)) throw new AuthorizationError("Office staff only");
+      const b = await readBody(req);
+      const displayName = String(b.displayName ?? "").trim();
+      if (displayName.length < 2) throw new ValidationError("Type the site engineer name.", "displayName");
+      const base = displayName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) || "engineer";
+      let identifier = base;
+      let n = 2;
+      while (platform.users.hasIdentifier(identifier)) {
+        identifier = (base + String(n)).slice(0, 255);
+        n += 1;
+      }
+      const u = platform.users.createUser({
+        identifier,
+        displayName,
+        credential: randomBytes(8).toString("hex"),
+        roleIds: [ROLES.SITE_ENGINEER],
+      });
+      setUserGrants(
+        u.id,
+        [
+          { module: "Training", action: "read" },
+          { module: "Training", action: "add_attendees" },
+          { module: "Testing", action: "read" },
+          { module: "Testing", action: "edit" },
+          { module: "Calibration", action: "read" },
+          { module: "Calibration", action: "edit" },
+          { module: "Inspection", action: "read" },
+          { module: "Inspection", action: "edit" },
+          { module: "Mapping", action: "read" },
+          { module: "Mapping", action: "edit" },
+        ],
+        ["Testing", "Calibration", "Inspection", "Mapping"],
+      );
+      sendJson(res, 201, { id: u.id, displayName: u.displayName, roleName: "Site Engineer" });
       return;
     }
     
@@ -1577,7 +1859,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       requireAddTrainee(userId);
       requireAssignedIfFieldUser(userId, attendeeEdit[1]);
       requireEditable(userId, attendeeEdit[1]);
-      sendJson(res, 200, platform.training.updateAttendee(attendeeEdit[1], attendeeEdit[2], await readBody(req)));
+      const attendee = platform.training.updateAttendee(attendeeEdit[1], attendeeEdit[2], await readBody(req));
+      await platform.training.issueMissingCertificates(attendeeEdit[1]);
+      sendJson(res, 200, attendee);
       return;
     }
     if (method === "DELETE" && attendeeEdit) {
@@ -1657,7 +1941,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     // Add Invoice Number and Close Job - Office Admin only
     const invoiceMatch = path.match(/^\/api\/training\/([^/]+)\/invoice$/);
     if (method === "POST" && invoiceMatch) {
-      requirePerm(userId, "Invoice", "create");
+      const caller = platform.users.getUser(userId);
+      const isAccountant = caller.identifier.trim().toLowerCase() === "accountant";
+      if (!isAccountant) requirePerm(userId, "Invoice", "create");
       if (isFieldOnly(userId)) throw new AuthorizationError("Office staff only");
       const b = await readBody(req);
       sendJson(res, 200, platform.training.addInvoiceAndClose(invoiceMatch[1], b.invoiceNumber, userId));

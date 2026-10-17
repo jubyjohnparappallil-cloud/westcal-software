@@ -190,7 +190,7 @@ describe("capturing a trainee from an ID card", () => {
     expect(stored.trainerSignature).toBe("data:image/png;base64,DDDD");
     const office = TrainingService.forOfficeView(stored);
     expect(office.attendees[0].photoDataUrl).toBe("data:image/jpeg;base64,BBBB");
-    expect(office.attendees[0].idCardDataUrl).toBeUndefined();
+    expect(office.attendees[0].idCardDataUrl).toBe("data:image/jpeg;base64,AAAA");
     expect(office.attendees[0].extraPhotoDataUrl).toBeUndefined();
   });
 
@@ -265,6 +265,12 @@ describe("reading an Emirates ID", () => {
     const parsed = parseEmiratesId("Name: TEST USER\nDate of Birth: 05/09/1990");
     expect(parsed.dateOfBirth).toBe("1990-09-05");
     expect(parsed.mobileNumber).toBe("");
+  });
+
+  it("does not treat OCR noise as a person's name", () => {
+    const parsed = parseEmiratesId("Name: QO SF SLARE H x hE N M EE YT Wns CE RN\nID Number: 784-1988-2949574-0");
+    expect(parsed.name).toBe("");
+    expect(parsed.idOrVisaNo).toBe("784-1988-2949574-0");
   });
 
   it("reports low confidence on unreadable text instead of inventing fields", () => {

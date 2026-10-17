@@ -3,6 +3,14 @@ import type { Course, Job } from "../types";
 export const WESTCAL_NAME = "Westcal Instrumentation and Calibration Services LLC";
 
 export const isTrainingJob = (j: Job) => !j.serviceType || j.serviceType === "Training";
+
+/** TR number Super Admin set. WC-TR4544 and TR 4544 both print as TR4544. */
+export function printedTrNo(j: Pick<Job, "jobOrderNo" | "jobNo">): string {
+  const raw = String(j.jobOrderNo || j.jobNo || "").replace(/\s+/g, "").toUpperCase();
+  const body = raw.replace(/^WC-/, "");
+  const m = body.match(/^TR(\d+)/) || body.match(/(\d+)/);
+  return m ? `TR${m[1]}` : body;
+}
 export const statusClass = (s: string) => "chip " + s.replace(" ", "");
 
 /** Most recently created job first. */
@@ -40,11 +48,59 @@ export function sheetView(j: Job) {
   return { courseTitle, certifiedBy, date: formatDob(j.trainingDate) };
 }
 
+/** Every course the office can put on a certificate: the catalog, this job, and the current value. */
+export function courseChoices(catalog: Course[] | undefined, job: Job, current?: string): string[] {
+  return [...new Set([...courseNames(catalog), ...jobCourses(job), current || ""].map((s) => s.trim()).filter(Boolean))];
+}
+
+export function coursesForPerson(
+  job: Job,
+  person: { name?: string; idOrVisaNo?: string; course?: string }
+): string[] {
+  const allowed = jobCourses(job);
+  const eid = String(person.idOrVisaNo || "").replace(/\D/g, "");
+  const name = String(person.name || "").trim().toLowerCase();
+  const held = (job.attendees || [])
+    .filter((row) => {
+      const otherEid = String(row.idOrVisaNo || "").replace(/\D/g, "");
+      if (eid.length >= 15) return otherEid === eid;
+      if (otherEid.length >= 15) return false;
+      return !!name && String(row.name || "").trim().toLowerCase() === name;
+    })
+    .map((row) => String(row.course || "").trim())
+    .filter((course) => course && !course.includes(" · "));
+  return [...new Set(held.filter((course) => !allowed.length || allowed.includes(course)))];
+}
+
 export function jobCourses(j: Job): string[] {
   return String(j.course || "")
     .split(" · ")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function sameCourse(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** Courses shown while editing one trainee. The course already saved stays selected. */
+export function editCourseChoices(
+  job: Job,
+  person: { name?: string; idOrVisaNo?: string; course?: string },
+): { options: string[]; selected: string[] } {
+  const base = jobCourses(job);
+  const current = String(person.course || "").trim();
+  const currentOne = current && !current.includes(" · ") ? current : "";
+  const selected: string[] = [];
+  for (const name of [currentOne, ...coursesForPerson(job, person)]) {
+    if (!name || selected.some((item) => sameCourse(item, name))) continue;
+    selected.push(name);
+  }
+  const options = [...selected];
+  for (const name of base) {
+    if (!options.some((item) => sameCourse(item, name))) options.push(name);
+  }
+  return { options, selected: selected.length ? selected : options.slice(0, 1) };
 }
 
 export const courseNames = (courses: Course[] | undefined) => (courses || []).map((c) => (typeof c === "string" ? c : c.name));

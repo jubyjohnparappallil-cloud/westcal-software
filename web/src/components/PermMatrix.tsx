@@ -33,20 +33,20 @@ export const STAFF_PRESET: Record<string, string[]> = {
   "role-super-admin": STAFF_PERM_KEYS,
   "role-admin-staff": [
     "Testing:create", "Testing:read", "Calibration:create", "Calibration:read", "Inspection:create", "Inspection:read",
-    "Mapping:create", "Mapping:read", "Mapping:edit", "Training:create", "Training:read", "Training:assign", "Training:edit",
+    "Mapping:create", "Mapping:read", "Mapping:edit", "Mapping:add_rows", "Training:create", "Training:read", "Training:assign", "Training:edit",
     "Training:cancel", "Certificates:read", "Training:documents", "Invoice:create", "Invoice:monitor", "Reports:read",
   ],
   "role-sales": [
     "Testing:create", "Testing:read", "Calibration:create", "Calibration:read", "Inspection:create", "Inspection:read",
-    "Mapping:create", "Mapping:read", "Training:create", "Training:read", "Training:assign", ...OFFICE_TRAINING,
+    "Mapping:create", "Mapping:read", "Mapping:add_rows", "Training:create", "Training:read", "Training:assign", ...OFFICE_TRAINING,
   ],
   "role-job-assistant": [
     "Training:read", "Training:edit", "Training:edit_issued", "Certificates:read", "Certificates:edit", "Testing:read", "Calibration:read", "Inspection:read",
-    "Mapping:read", "Mapping:edit", ...OFFICE_TRAINING,
+    "Mapping:read", "Mapping:edit", "Mapping:add_rows", ...OFFICE_TRAINING,
   ],
   "role-front-desk": [
     "Testing:create", "Testing:read", "Calibration:create", "Calibration:read", "Inspection:create", "Inspection:read",
-    "Mapping:create", "Mapping:read", "Training:create", "Training:read", "Training:assign", "Training:cancel",
+    "Mapping:create", "Mapping:read", "Mapping:add_rows", "Training:create", "Training:read", "Training:assign", "Training:cancel",
     "Training:attendance", "Reports:read",
   ],
   "role-trainer": ["Training:read", "Training:edit", "Training:attendance", "Training:add_attendees", "Certificates:read"],

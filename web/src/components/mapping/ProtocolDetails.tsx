@@ -8,6 +8,7 @@ import {
   PROTOCOL_LABELS,
   protocolFromJob,
   protocolToJob,
+  recordProtocolEdit,
   sheetsFromJob,
   sheetsToJob,
   splitSeason,
@@ -18,10 +19,11 @@ import { LayoutUpload, MappingRanges, ProtocolFields, ProtocolPreview, ProtocolS
 
 export function ProtocolDetails({ job, editable, onSaved }: { job: Job; editable: boolean; onSaved: () => void }) {
   const defaults = protocolFromJob(job);
-  if (editable) return <ProtocolDetailsForm job={job} defaults={defaults} onSaved={onSaved} />;
+  if (editable) return <ProtocolDetailsForm key={job.updatedAt || job.id} job={job} defaults={defaults} onSaved={onSaved} />;
   return (
     <>
       <div className="sect">Protocol details</div>
+      <p className="hint">Open Edit job, or use an account that can create mapping jobs, to change the protocol. Saved values are shown below.</p>
       <div className="grid">
         {PROTOCOL_LABELS.map(([k, label]) => (
           <div key={k}>
@@ -46,6 +48,7 @@ function ProtocolDetailsForm({ job, defaults, onSaved }: { job: Job; defaults: P
   });
   const [p, setP] = useState(defaults);
   const [sheets, setSheets] = useState(() => sheetsFromJob(job));
+  const [savedNote, setSavedNote] = useState("");
   const [preview, setPreview] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,13 +68,16 @@ function ProtocolDetailsForm({ job, defaults, onSaved }: { job: Job; defaults: P
     if (!ranges.year.trim()) return setErr("Enter the year for the season.");
     setBusy(true);
     try {
+      const nextSheets = recordProtocolEdit(sheets, sheetsFromJob(job));
+      setSheets(nextSheets);
       await api("PATCH", `/api/training/${job.id}`, {
         ...protocolToJob(p),
         seasonYear: [ranges.season, ranges.year.trim()].filter(Boolean).join(" "),
         mappingRange: ranges.tempRange,
         maxHumRange: ranges.humRange,
-        ...sheetsToJob(sheets),
+        ...sheetsToJob(nextSheets),
       });
+      setSavedNote("Protocol changes are saved. The Change record lists this edit.");
       if (generate) await downloads.mappingProtocol(job.id);
       onSaved();
     } catch (e) {
@@ -84,7 +90,7 @@ function ProtocolDetailsForm({ job, defaults, onSaved }: { job: Job; defaults: P
   return (
     <div className="job-form">
       <div className="sect">Protocol details</div>
-      <p className="hint">These fields are filled when you open the job. Change any value, then save. The protocol report prints exactly what is saved here.</p>
+      <p className="hint">Change any protocol field or table, then Save. Those values stay on the job and print on the protocol report. The Change record is filled when you save an update.</p>
       <div className="grid">
         <MappingRanges {...ranges} onChange={(patch) => setRanges((r) => ({ ...r, ...patch }))} />
         {field("company", "Company name")}
@@ -104,6 +110,7 @@ function ProtocolDetailsForm({ job, defaults, onSaved }: { job: Job; defaults: P
         </button>
       </p>
       <div className="err">{err}</div>
+      {savedNote && <p className="ok-msg">{savedNote}</p>}
       {preview && (
         <ProtocolPreview p={p} set={set} sheets={sheets} setSheets={setSheets} allowAddRows={allowAddRows} onClose={() => setPreview(false)} />
       )}

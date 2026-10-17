@@ -511,6 +511,16 @@
   flex: none;
   background: #e8eef6;
 }
+.field-embed .id-card-full {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fff;
+  display: block;
+  border: 1px solid #d5deea;
+}
 .field-embed .att-photo.empty {
   display: flex;
   align-items: center;

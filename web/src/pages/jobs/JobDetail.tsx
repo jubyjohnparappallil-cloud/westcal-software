@@ -8,7 +8,7 @@ import { Paged } from "../../components/Pagination";
 import { SignBox, TraineeEditor } from "../../components/TraineeEditor";
 import { TrainerSheet } from "../certificates/TrainerSheet";
 import { copyPublicLink, downloads } from "../../lib/downloads";
-import { isTrainingJob, jobCompanyNames, jobDateRange, formatClock, sheetView, statusClass } from "../../lib/jobs";
+import { isTrainingJob, jobCompanyNames, jobDateRange, formatClock, printedTrNo, sheetView, statusClass } from "../../lib/jobs";
 import type { Assignee } from "../../lib/roles";
 import type { Job } from "../../types";
 
@@ -37,7 +37,10 @@ export function JobDetail({
   onCancel: (job: Job) => void;
   onChanged: () => void;
 }) {
-  const { perms, go, goToCertificates } = useApp();
+  const { perms, session, go, goToCertificates } = useApp();
+  const accountant =
+    String(session.identifier || "").trim().toLowerCase() === "accountant" ||
+    session.displayName.trim().toLowerCase() === "munaveer";
   const canAssign = (perms.isSuper() || perms.has("Training:create") || perms.has("Training:assign")) && (!perms.isFieldUser() || perms.isAdmin());
   const { loading, data, reload } = usePageData(async () => {
     const [job, assignees] = await Promise.all([
@@ -104,10 +107,10 @@ export function JobDetail({
     <div className="card" ref={cardRef}>
       <div className="toolbar" style={{ marginBottom: 12 }}>
         <h3 style={{ margin: 0 }}>
-          {j.jobNo} — {j.serviceType || "Training"} <span className={statusClass(j.status)}>{j.status}</span>{" "}
+          {(isTrainingJob(j) ? printedTrNo(j) : j.jobNo)} — {j.serviceType || "Training"} <span className={statusClass(j.status)}>{j.status}</span>{" "}
           <span className="chip">{j.location || "-"}</span>
         </h3>
-        {perms.canEditJob() && j.status !== "Cancelled" && perms.canChangeJob(j.status) && (
+        {((mapping && perms.canEditMapping()) || perms.canEditJob()) && j.status !== "Cancelled" && perms.canChangeJob(j.status) && (
           <button className="btn sm" onClick={onEdit}>
             Edit job
           </button>
@@ -127,7 +130,26 @@ export function JobDetail({
           <div className="grid" style={{ marginBottom: 6 }}>
             <div>
               <label>{mapping ? "Mapping" : "Scope / Course"}</label>
-              {j.course}
+              {(() => {
+                if (!training || !accountant) return j.course;
+                const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+                const names = String(j.course || "").split(" · ").map((name) => name.trim()).filter(Boolean);
+                const lineNames = new Set(lines.map((line) => line.description.trim().toLowerCase()));
+                const taken = new Set<string>();
+                for (const line of lines) {
+                  (j.certificates || []).filter((c) => same(c.course || "", line.description)).forEach((c) => taken.add(c.id));
+                }
+                const spare = (j.certificates || []).filter((c) => !taken.has(c.id));
+                let spareAt = 0;
+                const shown = names.map((name) => {
+                  if ((j.certificates || []).some((c) => same(c.course || "", name))) return name;
+                  const next = spare[spareAt];
+                  if (!next || !lineNames.has(name.toLowerCase())) return name;
+                  spareAt += 1;
+                  return (next.course || "").trim() || name;
+                });
+                return shown.join(" · ");
+              })()}
             </div>
             {mapping && (
               <>
@@ -174,6 +196,7 @@ export function JobDetail({
                     <th>Description</th>
                     <th>Qty</th>
                     <th>Remarks</th>
+                    {training && accountant && <th>Certificate</th>}
                     {!training && (
                       <>
                         <th>Reading</th>
@@ -183,14 +206,36 @@ export function JobDetail({
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map((l) => {
+                  {(() => {
+                    const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+                    const certList = training && accountant ? j.certificates || [] : [];
+                    const byLine = new Map<number, typeof certList>();
+                    const taken = new Set<string>();
+                    for (const line of lines) {
+                      const hit = certList.filter((c) => same(c.course || "", line.description));
+                      hit.forEach((c) => taken.add(c.id));
+                      byLine.set(line.sn, hit);
+                    }
+                    const spare = certList.filter((c) => !taken.has(c.id));
+                    const renamed = new Map<number, string>();
+                    for (const line of lines) {
+                      if ((byLine.get(line.sn) || []).length) continue;
+                      const next = spare.shift();
+                      if (!next) continue;
+                      byLine.set(line.sn, [next]);
+                      if (String(next.course || "").trim()) renamed.set(line.sn, String(next.course).trim());
+                    }
+                    return lines.map((l) => {
                     const r = resultFor(l.sn);
+                    const certs = byLine.get(l.sn) || [];
+                    const description = renamed.get(l.sn) || l.description;
                     return (
                       <tr key={l.sn}>
                         <td>{l.sn}</td>
-                        <td>{l.description}</td>
+                        <td>{description}</td>
                         <td>{l.qty}</td>
                         <td>{l.remarks || "-"}</td>
+                        {training && accountant && <td>{certs.length ? certs.map((c) => c.certificateNo).join(", ") : "-"}</td>}
                         {!training && (
                           <>
                             <td>{r ? r.reading || "-" : "—"}</td>
@@ -199,7 +244,8 @@ export function JobDetail({
                         )}
                       </tr>
                     );
-                  })}
+                  });
+                  })()}
                 </tbody>
               </table>
             </>
@@ -345,7 +391,7 @@ export function JobDetail({
                     Work permit
                   </button>
                 )}
-                {mapping && perms.canDownload() && (
+                {mapping && (perms.canDownload() || perms.canEditMapping()) && (
                   <button className="btn dark sm" onClick={() => downloads.mappingProtocol(j.id)}>
                     Protocol report
                   </button>
@@ -394,6 +440,17 @@ export function JobDetail({
               <button className="btn sec sm" onClick={() => downloads.card(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
                 ID card
               </button>
+              <button className="btn sec sm" onClick={() => downloads.cardClassic(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+                Old ID card
+              </button>
+              <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+                Old design data
+              </button>
+              {perms.canIssueCerts() && (
+                <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+                  Special design
+                </button>
+              )}
             </p>
           ))}
           {j.certificates.length > 0 && (

@@ -13,6 +13,8 @@ export interface FetchedId {
   /** ISO yyyy-mm-dd so it drops straight into an <input type="date">. */
   dateOfBirth: string;
   company: string;
+  /** Employer printed on the back of the Emirates ID. */
+  employer: string;
   course: string;
   trainingDate: string;
   confidence: number; // 0..1 rough confidence
@@ -103,6 +105,22 @@ export function extractEmiratesIdNumber(ocrText: string): string {
   return "";
 }
 
+/**
+ * A real card name is two or more proper words. OCR noise like
+ * "QO SF SLARE H x hE N M EE" is mostly 1–2 letter scraps and is dropped.
+ */
+export function cleanName(raw: string): string {
+  const letters = String(raw || "")
+    .replace(/[^A-Za-z' .-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = letters.split(" ").filter((w) => /[A-Za-z]{2,}/.test(w));
+  const strong = words.filter((w) => w.replace(/[^A-Za-z]/g, "").length >= 3);
+  if (strong.length < 2) return "";
+  if (strong.length / words.length < 0.5) return "";
+  return words.join(" ");
+}
+
 /** Latin name line on Emirates IDs when OCR misses the "Name:" label. */
 function extractUnlabeledName(ocrText: string): string {
   const skip =
@@ -117,9 +135,23 @@ function extractUnlabeledName(ocrText: string): string {
     const compact = letters.replace(/ /g, "");
     const upper = compact.replace(/[^A-Z]/g, "").length / Math.max(1, compact.length);
     if (upper < 0.65 && !/^[A-Z][a-z]+(?: [A-Z][a-z]+){1,7}$/.test(letters)) continue;
-    if (letters.length > best.length) best = letters;
+    const candidate = cleanName(letters);
+    if (candidate.length > best.length) best = candidate;
   }
   return best;
+}
+
+/** Employer line on the back of an Emirates ID: "Employer: Maryam Suliman Technical Services". */
+export function extractEmployer(ocrText: string): string {
+  const m = ocrText.match(/Employer\s*[:\-]?\s*([^\n\r]+)/i);
+  if (!m) return "";
+  return m[1]
+    .replace(/[^\x00-\x7F]/g, " ")
+    .replace(/\b(?:Issuing|Occupation|Card|Number|Place)\b[\s\S]*$/i, "")
+    .replace(/[^A-Za-z0-9 .,&'()/-]/g, " ")
+    .replace(/\s+\d+\s*$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function labeledValue(ocrText: string, label: RegExp): string {
@@ -145,7 +177,10 @@ function parseWestcalCard(ocrText: string): { name: string; company: string; cou
     const compact = letters.replace(/ /g, "");
     const upper = compact.replace(/[^A-Z]/g, "").length / Math.max(1, compact.length);
     if (!course && words.length >= 2 && words.length <= 6 && upper < 0.7) course = letters;
-    if (upper >= 0.7 && words.length >= 1 && letters.length >= 5 && letters.length <= 48) nameParts.push(letters);
+    if (upper >= 0.7 && words.length >= 1 && letters.length >= 5 && letters.length <= 48) {
+      const piece = cleanName(letters) || (words.length === 1 && letters.replace(/[^A-Za-z]/g, "").length >= 5 ? letters : "");
+      if (piece) nameParts.push(piece);
+    }
   }
   const name = nameParts.join(" ").replace(/\s+/g, " ").trim();
   return { name, company, course, trainingDate };
@@ -166,16 +201,17 @@ export function parseEmiratesId(ocrText: string): FetchedId {
 
   const westcal = parseWestcalCard(ocrText);
   const name =
-    get(/Name[:\s]+([A-Za-z ].+)/i) ||
-    get(/(?:Full Name|Card Holder|Holder Name)[:\s]+([A-Za-z ].+)/i) ||
-    westcal.name ||
+    cleanName(get(/Name[:\s]+([^\n]+)/i)) ||
+    cleanName(get(/(?:Full Name|Card Holder|Holder Name)[:\s]+([^\n]+)/i)) ||
+    cleanName(westcal.name) ||
     extractUnlabeledName(ocrText);
   const idOrVisaNo = extractEmiratesIdNumber(ocrText)
     || get(/(?:Visa|File)\s*(?:No|Number)[:\s]+([\w/-]+)/i);
   const nationality = get(/Nationality[:\s]+([A-Za-z ]+)/i);
   const dobRaw = get(/(?:Date of Birth|DOB|Birth Date|Date of birth)[:\s]+([\d/-]{8,10})/i);
   const dateOfBirth = toIsoDate(dobRaw);
-  const company = westcal.company;
+  const employer = extractEmployer(ocrText);
+  const company = employer || westcal.company;
   const course = westcal.course;
   const trainingDate = westcal.trainingDate;
   const trainingCard = !!(company || trainingDate || /Certificate\s*No/i.test(ocrText));
@@ -201,5 +237,5 @@ export function parseEmiratesId(ocrText: string): FetchedId {
   }
   const confidence = filled / 4;
 
-  return { name, idOrVisaNo, nationality, mobileNumber, dateOfBirth, company, course, trainingDate, confidence };
+  return { name, idOrVisaNo, nationality, mobileNumber, dateOfBirth, company, employer, course, trainingDate, confidence };
 }

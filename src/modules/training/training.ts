@@ -358,6 +358,18 @@ function attendeeAssignedCourse(attendee: { course?: string }): string {
   return assigned;
 }
 
+function sameTraineeForCourses(
+  attendee: Attendee,
+  fetched: { name: string; idOrVisaNo?: string }
+): boolean {
+  const eid = String(fetched.idOrVisaNo ?? "").replace(/\D/g, "");
+  const otherEid = String(attendee.idOrVisaNo ?? "").replace(/\D/g, "");
+  if (eid.length >= 15) return otherEid === eid;
+  if (otherEid.length >= 15) return false;
+  const name = normalizePersonName(fetched.name);
+  return !!name && normalizePersonName(attendee.name) === name;
+}
+
 function isSameTrainee(
   attendee: Attendee,
   fetched: { name: string; mobileNumber: string; idOrVisaNo?: string }
@@ -400,12 +412,40 @@ export function formatJobDates(job: { trainingDate?: string; trainingDateTo?: st
   return from || to || "";
 }
 
+/** TR number Super Admin typed, printed as Job No. WC-TR4544 and TR 4544 both become TR4544. */
+export function printedTrNo(job: { jobOrderNo?: string; jobNo?: string }): string {
+  const raw = String(job.jobOrderNo || job.jobNo || "").replace(/\s+/g, "").toUpperCase();
+  const body = raw.replace(/^WC-/, "");
+  const m = body.match(/^TR(\d+)/) || body.match(/(\d+)/);
+  return m ? `TR${m[1] || m[0]}` : body;
+}
+
+function nextCertificateNo(job: TrainingJob): string {
+  const tr = printedTrNo(job);
+  let max = 0;
+  for (const c of job.certificates) {
+    const m = String(c.certificateNo || "").match(/-(\d+)$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `WC-${tr}-${String(max + 1).padStart(2, "0")}`;
+}
+
+export function normalizeCertificateNo(raw: string, job: { jobOrderNo?: string; jobNo?: string }): string {
+  const compact = String(raw || "").replace(/\s+/g, "").toUpperCase();
+  const tr = printedTrNo(job);
+  const seqOnly = compact.match(/^(\d{1,3})$/);
+  if (seqOnly) return `WC-${tr}-${String(Number(seqOnly[1])).padStart(2, "0")}`;
+  const full = compact.match(/^(?:WC-)?(?:TR)?(\d+)-(\d+)$/);
+  if (full) return `WC-TR${full[1]}-${String(Number(full[2])).padStart(2, "0")}`;
+  throw new ValidationError("Certificate number must look like WC-TR4544-01", "certificateNo");
+}
+
 /** One course name for one trainee certificate — never the joined job list. */
 function attendeeCertificateCourse(job: TrainingJob, requested?: string): string {
   const allowed = jobCourseList(job.course);
   const asked = String(requested ?? "").trim();
   const single = asked && !asked.includes(" · ") ? asked : "";
-  if (single && (!allowed.length || allowed.includes(single))) return single;
+  if (single) return single;
   if (allowed.length === 1) return allowed[0];
   return "";
 }
@@ -692,6 +732,22 @@ export class TrainingService {
     return `WC-${prefix}${highest + 1}`;
   }
 
+  numberingPreview(): { nextTr: string; exampleJobNo: string; exampleCert: string } {
+    const nextTr = this.peekNextJobOrderNo("Training");
+    const exampleJobNo = printedTrNo({ jobOrderNo: nextTr });
+    return { nextTr, exampleJobNo, exampleCert: `WC-${exampleJobNo}-01` };
+  }
+
+  setNextTrainingOrder(raw: string): { nextTr: string; exampleJobNo: string; exampleCert: string } {
+    const m = String(raw ?? "").replace(/\s+/g, "").toUpperCase().match(/(\d+)/);
+    const n = Number(m?.[1]);
+    if (!Number.isInteger(n) || n < 1) {
+      throw new ValidationError("Type the next TR number, for example 4522 or TR4522", "nextTr");
+    }
+    this.trainingOrderSeq = n;
+    return this.numberingPreview();
+  }
+
   /** Next job-order number without consuming it (for the create-job form). */
   peekNextJobOrderNo(serviceType: ServiceType = "Training"): string {
     const training = serviceType === "Training";
@@ -707,13 +763,21 @@ export class TrainingService {
     return no;
   }
 
+  /** Admin may type a TR number. The suggested next number still advances the sequence. */
+  private takeJobOrderNo(serviceType: ServiceType, requested?: string): string {
+    const typed = String(requested ?? "").replace(/\s+/g, " ").trim();
+    const next = this.peekNextJobOrderNo(serviceType);
+    const same = typed.replace(/\s+/g, "").toUpperCase() === next.replace(/\s+/g, "").toUpperCase();
+    if (!typed || same) return this.allocateJobOrderNo(serviceType);
+    return typed;
+  }
+
   /** Create a service job of any type (Calibration/Inspection/Testing/Training). */
   createJob(input: CreateTrainingInput): TrainingJob {
     const course = joinCourseNames(input.course, input.courses);
     const companies = joinCompanyNames(input.customerName, input.companies);
     if (!companies.length) throw new ValidationError("at least one company is required", "customerName");
     if (!course && !String(input.mappingType ?? "").trim()) throw new ValidationError("scope/course is required", "course");
-    if (!input.address?.trim()) throw new ValidationError("site address is required", "address");
     const isMapping = (input.serviceType ?? "Training") === "Mapping";
     let fromDate = input.trainingDate;
     let toDate = input.trainingDateTo;
@@ -774,7 +838,7 @@ export class TrainingService {
       standardReference: input.standardReference,
       typeOfTraining: input.typeOfTraining,
       clientRequirements: input.clientRequirements,
-      jobOrderNo: this.allocateJobOrderNo(serviceType),
+      jobOrderNo: this.takeJobOrderNo(serviceType, input.jobOrderNo),
       workStatus: input.workStatus,
       requiredDateForService: input.requiredDateForService,
       handedOverTo: input.handedOverTo,
@@ -1019,8 +1083,10 @@ export class TrainingService {
    * does not send megabytes of JSON on every page load.
    */
   static summarizeJob(job: TrainingJob): TrainingJob {
+    const training = !job.serviceType || job.serviceType === "Training";
     return {
       ...job,
+      jobNo: training ? printedTrNo(job) : job.jobNo,
       trainerSignature: undefined,
       sheetInsigniaLogoDataUrl: undefined,
       layoutImageDataUrl: undefined,
@@ -1050,16 +1116,17 @@ export class TrainingService {
     };
   }
 
-  /** Office job page: keep face photos, drop Emirates ID scans and other bulky files. */
+  /** Office job page: keep the face photo and the full ID card so a crop can start from the card. */
   static forOfficeView(job: TrainingJob): TrainingJob {
     const light = TrainingService.summarizeJob(job);
     light.trainerSignature = job.trainerSignature;
     light.attendees = job.attendees.map((a) => ({
       ...a,
       photoDataUrl: a.photoDataUrl,
-      extraPhotoDataUrl: undefined,
-      idCardDataUrl: undefined,
-      hasIdCard: !!(a.idCardDataUrl),
+      extraPhotoDataUrl: a.extraPhotoDataUrl,
+      idCardDataUrl: a.idCardDataUrl,
+      idCardBackDataUrl: a.idCardBackDataUrl,
+      hasIdCard: !!a.idCardDataUrl,
       signature: a.signature,
     }));
     return light;
@@ -1068,11 +1135,19 @@ export class TrainingService {
   findCertificateByVerificationRef(
     verificationRef: string
   ): { job: TrainingJob; certificate: TrainingCertificate } | undefined {
+    const ref = verificationRef.trim();
+    let prefixHit: { job: TrainingJob; certificate: TrainingCertificate } | undefined;
+    let prefixCount = 0;
     for (const job of this.jobs.values()) {
-      const certificate = job.certificates.find((c) => c.verificationRef === verificationRef);
-      if (certificate) return { job, certificate };
+      for (const certificate of job.certificates) {
+        if (certificate.verificationRef === ref) return { job, certificate };
+        if (ref.length >= 10 && certificate.verificationRef.startsWith(ref)) {
+          prefixHit = { job, certificate };
+          prefixCount += 1;
+        }
+      }
     }
-    return undefined;
+    return prefixCount === 1 ? prefixHit : undefined;
   }
 
   /** Jobs assigned to one user — this is the "my area" list in the mobile app. */
@@ -1474,6 +1549,7 @@ export class TrainingService {
       signature: string;
       autoFetched: boolean;
       course: string;
+      courses: string[];
     }>
   ): Attendee {
     const job = this.getJob(jobId);
@@ -1486,7 +1562,12 @@ export class TrainingService {
       if (!patch.name.trim()) throw new ValidationError("name is required", "name");
       attendee.name = patch.name.trim();
     }
-    if (patch.company !== undefined) attendee.company = patch.company.trim();
+    if (patch.company !== undefined) {
+      attendee.company = patch.company.trim();
+      for (const cert of job.certificates) {
+        if (cert.attendeeId === attendee.id) cert.company = attendee.company;
+      }
+    }
     if (patch.idOrVisaNo !== undefined) attendee.idOrVisaNo = patch.idOrVisaNo.trim();
     if (patch.nationality !== undefined) attendee.nationality = patch.nationality.trim();
     if (patch.mobileNumber !== undefined) {
@@ -1508,7 +1589,44 @@ export class TrainingService {
       attendee.signedAt = patch.signature ? new Date() : undefined;
     }
     if (patch.autoFetched !== undefined) attendee.autoFetched = patch.autoFetched;
-    if (patch.course !== undefined) attendee.course = attendeeCertificateCourse(job, patch.course);
+    if (patch.courses !== undefined) {
+      const wanted = [...new Set(patch.courses.map((name) => String(name ?? "").trim()).filter(Boolean))];
+      if (!wanted.length) throw new ValidationError("Tick the training course for this trainee", "course");
+      const identity = { name: attendee.name, mobileNumber: attendee.mobileNumber, idOrVisaNo: attendee.idOrVisaNo };
+      const rows = job.attendees.filter((row) => row.id === attendee.id || sameTraineeForCourses(row, identity));
+      const current = attendeeAssignedCourse(attendee);
+      const keep = wanted.includes(current) ? current : wanted.find((course) => !rows.some((row) => row.id !== attendee.id && attendeeAssignedCourse(row) === course)) || wanted[0];
+      attendee.course = keep;
+      for (const row of rows) {
+        if (row.id === attendee.id) continue;
+        const course = attendeeAssignedCourse(row);
+        if (wanted.includes(course)) continue;
+        if (job.certificates.some((cert) => cert.attendeeId === row.id)) continue;
+        const index = job.attendees.findIndex((item) => item.id === row.id);
+        if (index >= 0) job.attendees.splice(index, 1);
+      }
+      for (const course of wanted) {
+        const covered = job.attendees.some(
+          (row) => attendeeAssignedCourse(row) === course && (row.id === attendee.id || sameTraineeForCourses(row, identity))
+        );
+        if (covered) continue;
+        this.pushAttendeeRow(job, {
+          name: attendee.name,
+          company: attendee.company,
+          idOrVisaNo: attendee.idOrVisaNo,
+          nationality: attendee.nationality,
+          mobileNumber: attendee.mobileNumber,
+          dateOfBirth: attendee.dateOfBirth,
+          idCardFileName: attendee.idCardFileName,
+          idCardDataUrl: attendee.idCardDataUrl,
+          photoDataUrl: attendee.photoDataUrl,
+          extraPhotoDataUrl: attendee.extraPhotoDataUrl,
+          signature: attendee.signature,
+          autoFetched: attendee.autoFetched,
+          course,
+        });
+      }
+    } else if (patch.course !== undefined) attendee.course = attendeeCertificateCourse(job, patch.course);
     job.updatedAt = new Date();
     if (job.status === "Approved" || job.status === "Issued") {
       this.refreshIssuedCertificates(job, { attendeeId: attendee.id });
@@ -1592,7 +1710,7 @@ export class TrainingService {
           attendeeId: attendee.id,
           idOrVisaNo: attendee.idOrVisaNo,
           name: attendee.name,
-          company: (job.certificateUnder || attendee.company || job.customerName).trim(),
+          company: (attendee.company || job.certificateUnder || job.customerName).trim(),
           course: attendeeCertificateCourse(job, attendee.course),
           trainingDate: job.trainingDate,
           expiresOn,
@@ -1630,7 +1748,7 @@ export class TrainingService {
         attendeeId: attendee.id,
         idOrVisaNo: attendee.idOrVisaNo,
         name: attendee.name,
-        company: (job.certificateUnder || attendee.company || job.customerName).trim(),
+        company: (attendee.company || job.certificateUnder || job.customerName).trim(),
         course: attendeeCertificateCourse(job, attendee.course),
         trainingDate: job.trainingDate,
         expiresOn,
@@ -1640,21 +1758,59 @@ export class TrainingService {
     return job;
   }
 
-  /** Admin corrects an already-issued certificate. The next PDF download uses these fields. */
-  editCertificate(
+  /** Admin or certificate coordinator corrects an already-issued certificate. */
+  async editCertificate(
     jobId: string,
     certificateId: string,
-    patch: Partial<Pick<TrainingCertificate, "name" | "company" | "course" | "trainingDate" | "expiresOn" | "idOrVisaNo">>
-  ): TrainingCertificate {
+    patch: Partial<Pick<TrainingCertificate, "name" | "company" | "course" | "trainingDate" | "expiresOn" | "idOrVisaNo" | "certificateNo">>
+  ): Promise<TrainingCertificate> {
     const job = this.getJob(jobId);
     const cert = job.certificates.find((c) => c.id === certificateId);
     if (!cert) throw new NotFoundError("certificate not found");
+    if (patch.certificateNo !== undefined) {
+      const next = normalizeCertificateNo(patch.certificateNo, job);
+      const taken = job.certificates.some(
+        (c) => c.id !== cert.id && String(c.certificateNo || "").replace(/\s+/g, "").toUpperCase() === next,
+      );
+      if (taken) throw new ConflictError("that certificate number is already used on this job", "certificateNo");
+      if (next !== cert.certificateNo) {
+        this.codes.validateBarcodeEncodable(next);
+        const barcode = await this.codes.renderDocumentBarcode(next);
+        cert.certificateNo = next;
+        cert.jobNo = printedTrNo(job);
+        cert.barcodeDataUrl = barcode.dataUrl;
+      }
+    }
     if (patch.name !== undefined) {
       if (!patch.name.trim()) throw new ValidationError("name is required", "name");
       cert.name = patch.name.trim();
     }
     if (patch.company !== undefined) cert.company = patch.company.trim();
-    if (patch.course !== undefined) cert.course = patch.course.trim();
+    if (patch.course !== undefined) {
+      const next = patch.course.trim();
+      const previous = String(cert.course || "").trim();
+      cert.course = next;
+      if (previous && next && previous.toLowerCase() !== next.toLowerCase()) {
+        const stillUsed = job.certificates.some(
+          (item) => item.id !== cert.id && String(item.course || "").trim().toLowerCase() === previous.toLowerCase(),
+        );
+        const names = jobCourseList(job.course);
+        if (!stillUsed) {
+          const line = job.lineItems.find(
+            (item) => String(item.description || "").trim().toLowerCase() === previous.toLowerCase(),
+          );
+          if (line) line.description = next;
+          const index = names.findIndex((name) => name.toLowerCase() === previous.toLowerCase());
+          if (index >= 0) names[index] = next;
+          else if (!names.some((name) => name.toLowerCase() === next.toLowerCase())) names.push(next);
+          job.course = names.join(" · ");
+        } else if (!job.lineItems.some((item) => String(item.description || "").trim().toLowerCase() === next.toLowerCase())) {
+          const sn = job.lineItems.reduce((max, item) => Math.max(max, Number(item.sn) || 0), 0) + 1;
+          job.lineItems.push({ sn, description: next, qty: "1", remarks: "" });
+          if (!names.some((name) => name.toLowerCase() === next.toLowerCase())) job.course = [...names, next].join(" · ");
+        }
+      }
+    }
     if (patch.idOrVisaNo !== undefined) cert.idOrVisaNo = patch.idOrVisaNo.trim();
     if (patch.trainingDate !== undefined) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(patch.trainingDate)) {
@@ -1705,8 +1861,7 @@ export class TrainingService {
     fields: Pick<TrainingCertificate, "attendeeId" | "name" | "company" | "course" | "trainingDate" | "expiresOn"> &
       Partial<Pick<TrainingCertificate, "idOrVisaNo">>
   ): Promise<void> {
-    this.certSeq += 1;
-    const certificateNo = `${job.jobNo}-${String(this.certSeq).padStart(2, "0")}`;
+    const certificateNo = nextCertificateNo(job);
     this.codes.validateBarcodeEncodable(certificateNo);
     const verificationRef = newVerificationRef();
     const qr = await this.codes.renderVerificationQr(verificationRef);
@@ -1714,7 +1869,7 @@ export class TrainingService {
     job.certificates.push({
       id: newId(),
       certificateNo,
-      jobNo: job.jobNo,
+      jobNo: printedTrNo(job),
       ...fields,
       verificationRef,
       qrDataUrl: qr.dataUrl,

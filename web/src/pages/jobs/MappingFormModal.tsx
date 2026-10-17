@@ -16,7 +16,7 @@ import {
   type Protocol,
 } from "../../components/mapping/mappingData";
 import { LayoutUpload, MappingRanges, ProtocolFields, ProtocolPreview, ProtocolSheetsEditor } from "../../components/mapping/ProtocolEditor";
-import { presetPermissions, type Assignee } from "../../lib/roles";
+import type { Assignee } from "../../lib/roles";
 import type { Job } from "../../types";
 
 interface MappingLoaded {
@@ -102,17 +102,10 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
         .replace(/[^a-z0-9]+/g, "")
         .slice(0, 24) || "engineer";
     try {
-      await api("POST", "/api/users", {
-        identifier,
-        displayName: name,
-        credential: "pw",
-        roleIds: ["role-site-engineer"],
-        permissions: presetPermissions("role-site-engineer"),
-      });
+      const added = await api<Assignee>("POST", "/api/assignees", { displayName: name, identifier });
       const list = await api<Assignee[]>("GET", "/api/assignees");
       setAssignees(list);
-      const added = list.find((a) => a.roleName === "Site Engineer" && a.displayName === name);
-      if (added) setF((x) => ({ ...x, assignee: added.id }));
+      setF((x) => ({ ...x, assignee: added.id }));
       setNewEngineer("");
       setEngineerMsg({ text: name + " is added and selected.", ok: true });
     } catch (e) {

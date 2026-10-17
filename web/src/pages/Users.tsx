@@ -268,8 +268,8 @@ function ResetPassword({ user }: { user: User }) {
 
   async function reset() {
     setMsg({ ok: false, text: "" });
-    if (pw.length < 6 || !/[a-z]/i.test(pw) || !/[^a-z0-9]/i.test(pw)) {
-      return setMsg({ ok: false, text: "Use 6+ characters with a letter and a special character." });
+    if (pw.length < 6) {
+      return setMsg({ ok: false, text: "Password must be at least 6 characters." });
     }
     try {
       await api("POST", `/api/users/${user.id}/password`, { password: pw });

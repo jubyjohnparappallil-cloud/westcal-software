@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "r
 import type { Job } from "../types";
 import { fapi } from "./api";
 import { useField } from "./FieldApp";
-import { formatEidLocal, ocrEmiratesCard, prepareIdPhoto } from "./ocr";
+import { dateFromCardText, employerFromCardText, enhanceCard, fieldsFromCardText, nationalityFromCardText, ocrEmiratesCard, ocrSelection, shrinkImage } from "./ocr";
+import { IdWorkbench } from "../components/IdWorkbench";
 import { useDropImage } from "./useDropImage";
 
 interface Fetched {
@@ -12,21 +13,42 @@ interface Fetched {
   mobileNumber?: string;
   dateOfBirth?: string;
   company?: string;
+  employer?: string;
   course?: string;
   trainingDate?: string;
   confidence?: number;
 }
 const BLANK: Fetched = { name: "", idOrVisaNo: "", nationality: "", mobileNumber: "", dateOfBirth: "", confidence: 0 };
 
-export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
+export function Capture({
+  job,
+  onSaved,
+  readEmployer = false,
+  startFiles = [],
+  onBulkFiles,
+}: {
+  job: Job;
+  onSaved: () => void;
+  readEmployer?: boolean;
+  /** Photos kept after a person is added, so the next card in a bulk upload can be cropped. */
+  startFiles?: File[];
+  onBulkFiles?: (files: File[]) => void;
+}) {
   const { toast } = useField();
   const [mode, setMode] = useState<"photo" | "sample" | "manual">("photo");
   const [idCard, setIdCard] = useState<string | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [extra, setExtra] = useState<string | null>(null);
+  const [sharp, setSharp] = useState<string | null>(null);
   const [fetched, setFetched] = useState<Fetched | null>(null);
   const [scanBox, setScanBox] = useState<ReactNode>(null);
   const [showPaste, setShowPaste] = useState(false);
+  const [files, setFiles] = useState<File[]>(startFiles);
+  const [fileIndex, setFileIndex] = useState(0);
+  const [benchKey, setBenchKey] = useState(0);
+  const sourceRef = useRef<File | null>(startFiles[0] ?? null);
+  const photoLock = useRef(false);
+  const [reading, setReading] = useState(false);
 
   const fill = (f: Fetched, paste: boolean) => {
     setFetched(f);
@@ -34,61 +56,195 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
   };
   const pickGen = useRef(0);
 
-  async function onIdPicked(file: File | undefined) {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) return toast("Please choose an image.");
+  function openFiles(list: FileList | File[] | null | undefined) {
+    const next = Array.from(list || []).filter((f) => f.type.startsWith("image/"));
+    if (!next.length) return toast("Please choose a photo of the ID cards.");
+    setFiles(next);
+    setFileIndex(0);
+    setBenchKey((k) => k + 1);
+    sourceRef.current = next[0];
+    onBulkFiles?.(next);
+    setMode("photo");
+    setIdCard(null);
+    setPhoto(null);
+    setSharp(null);
+    setFetched({ ...BLANK });
+    photoLock.current = false;
+    setScanBox(null);
+  }
+
+  function differentCard() {
+    setIdCard(null);
+    setPhoto(null);
+    setExtra(null);
+    setSharp(null);
+    setFetched({ ...BLANK });
+    fill({ ...BLANK }, false);
+    photoLock.current = false;
+    setBenchKey((k) => k + 1);
+    if (files.length > 1) {
+      setFileIndex((i) => {
+        const next = (i + 1) % files.length;
+        sourceRef.current = files[next] ?? null;
+        return next;
+      });
+    }
+    setScanBox(
+      <p className="muted" style={{ margin: "12px 0 0" }}>
+        Move the blue box onto the next card, then extract it.
+      </p>,
+    );
+    toast(files.length > 1 ? "Next photo. Crop that card and extract it." : "Move the box onto the next card, then extract it.");
+  }
+
+  async function readLens(cropped: File) {
+    sourceRef.current = files[fileIndex] ?? sourceRef.current;
     const gen = ++pickGen.current;
+    setReading(true);
+    setScanBox(
+      <div className="scanning">
+        <span className="spin" aria-hidden="true"></span>
+        <span role="status">Enhancing the selected writing and reading it…</span>
+      </div>,
+    );
     try {
-      const { card, portrait, ocrCard } = await prepareIdPhoto(file);
+      const stored = await shrinkImage(cropped, 2200, 0.95);
       if (gen !== pickGen.current) return;
-      setPhoto(portrait);
-      setExtra(null);
-      setIdCard(card);
       setMode("photo");
-      setFetched({ ...BLANK });
-      setScanBox(
-        <div className="scanning">
-          <span className="spin" aria-hidden="true"></span>
-          <span role="status">Reading the card and filling the fields…</span>
-        </div>,
-      );
-      await new Promise((r) => setTimeout(r, 40));
-      if (gen !== pickGen.current) return;
       let text = "";
       try {
-        text = await ocrEmiratesCard([ocrCard]);
+        text = await ocrSelection(stored);
       } catch {
         text = "";
       }
-      if (gen !== pickGen.current) return;
-      let f: Fetched = { ...BLANK };
-      if (text.trim()) {
+      if (!fieldsFromCardText(text).name && !fieldsFromCardText(text).id) {
         try {
-          f = await fapi<Fetched>("POST", `/api/training/${job.id}/id-fetch`, { ocrText: text });
+          const clear = await enhanceCard(stored);
+          const more = await ocrSelection(clear);
+          text = [text, more].filter(Boolean).join("\n");
         } catch {
-          f = { ...BLANK };
+          /* the first read stands */
         }
       }
-      if (!f.idOrVisaNo) f.idOrVisaNo = formatEidLocal(text);
-      const percent = Math.round((f.confidence || 0) * 100);
+      if (gen !== pickGen.current) return;
+      const local = fieldsFromCardText(text);
+      const dob = dateFromCardText(text);
+      const nationality = nationalityFromCardText(text);
+      const letters = (text.match(/[A-Za-z]/g) || []).length;
+      const digits = (text.match(/\d/g) || []).length;
+      const name = local.name;
+      const id = local.id;
+      setFetched((cur) => {
+        const base = { ...BLANK, ...(cur || {}) };
+        return {
+          ...base,
+          name: name || (letters >= 8 ? "" : base.name || ""),
+          idOrVisaNo: id || (digits >= 8 ? "" : base.idOrVisaNo || ""),
+          ...(dob ? { dateOfBirth: dob } : {}),
+          ...(nationality ? { nationality } : {}),
+        };
+      });
       setScanBox(
-        f.name || f.idOrVisaNo ? (
+        name || id ? (
           <p className="okmsg" role="status">
-            Auto-filled {percent ? percent + "% of " : ""}the fields. Check them, then add to attendance.
+            {name && id
+              ? "Read the name after Name and the ID number. Check both before you add."
+              : name
+                ? "Read the name. Click the lens on the ID number if that box is empty."
+                : "Read the ID number. The name line was not clear, so the name was left empty."}
           </p>
         ) : (
           <p className="muted" style={{ margin: "12px 0 0" }}>
-            Could not read every field. Tap Fill from ID photo, or type the missing ones.
+            The letters in the lens were not sharp enough. The name and ID were left empty so a wrong name is not saved. Zoom in and click the lens on the line after Name.
           </p>
         ),
       );
-      fill(f, false);
     } catch {
-      toast("Could not read that image.");
+      toast("Could not read that area.");
+    } finally {
+      if (gen === pickGen.current) setReading(false);
     }
   }
 
-  const { dragging, dropProps } = useDropImage((file) => onIdPicked(file));
+  async function readBackCard(cropped: File) {
+    const gen = ++pickGen.current;
+    setReading(true);
+    setScanBox(
+      <div className="scanning">
+        <span className="spin" aria-hidden="true"></span>
+        <span role="status">Reading the back of the ID…</span>
+      </div>,
+    );
+    try {
+      const stored = await shrinkImage(cropped, 2200, 0.95);
+      if (gen !== pickGen.current) return;
+      let text = "";
+      try {
+        text = await ocrSelection(stored);
+      } catch {
+        text = "";
+      }
+      let employer = employerFromCardText(text);
+      if (!employer) {
+        try {
+          const clear = await enhanceCard(stored);
+          const more = await ocrSelection(clear);
+          text = [text, more].filter(Boolean).join("\n");
+          employer = employerFromCardText(text);
+        } catch {
+          /* the first read stands */
+        }
+      }
+      if (!employer && text.trim()) {
+        try {
+          const server = await fapi<Fetched>("POST", `/api/training/${job.id}/id-fetch`, { ocrText: text });
+          employer = (server.employer || "").trim();
+        } catch {
+          employer = "";
+        }
+      }
+      if (gen !== pickGen.current) return;
+      if (employer) {
+        setFetched((cur) => ({ ...BLANK, ...(cur || {}), company: employer, employer }));
+      }
+      setScanBox(
+        employer ? (
+          <p className="okmsg" role="status">
+            Read the employer from the back: {employer}. Check it before you add.
+          </p>
+        ) : (
+          <p className="muted" style={{ margin: "12px 0 0" }}>
+            The Employer line on the back was not clear. Zoom in and press Read back again, or type the company.
+          </p>
+        ),
+      );
+    } catch {
+      toast("Could not read the back of that ID.");
+    } finally {
+      if (gen === pickGen.current) setReading(false);
+    }
+  }
+
+  async function keepCard(cropped: File) {
+    try {
+      setIdCard(await shrinkImage(cropped, 1800));
+    } catch {
+      toast("Could not crop that card.");
+    }
+  }
+
+  async function keepPhoto(cropped: File) {
+    try {
+      photoLock.current = true;
+      setPhoto(await shrinkImage(cropped, 900));
+      toast("Photo cropped.");
+    } catch {
+      toast("Could not crop that photo.");
+    }
+  }
+
+  const scanFile = files[fileIndex] ?? null;
+  const { dragging, dropProps } = useDropImage((file) => openFiles([file]));
 
   async function useSample() {
     const sample = [
@@ -122,6 +278,46 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
 
   return (
     <>
+      {mode === "photo" && (
+        <>
+          {files.length > 1 && (
+            <div className="id-bulk-switch">
+              {files.map((f, i) => (
+                <button
+                  key={f.name + i}
+                  type="button"
+                  className={i === fileIndex ? "on" : ""}
+                  onClick={() => {
+                    setFileIndex(i);
+                    sourceRef.current = files[i];
+                    setBenchKey((k) => k + 1);
+                  }}
+                >
+                  Photo {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
+          {scanFile && (
+            <IdWorkbench
+              key={benchKey + ":" + fileIndex + ":" + scanFile.name}
+              file={scanFile}
+              read={fetched}
+              busy={reading}
+              onCard={(cropped) => void keepCard(cropped)}
+              onPhoto={(cropped) => void keepPhoto(cropped)}
+              onRead={(cropped) => readLens(cropped)}
+              onReadBack={(cropped) => readBackCard(cropped)}
+              onEdit={(patch) => setFetched((cur) => ({ ...(cur || BLANK), ...patch }))}
+            />
+          )}
+          {scanFile && (
+            <button type="button" className="btn sec" style={{ marginTop: 8 }} onClick={differentCard}>
+              Next card
+            </button>
+          )}
+        </>
+      )}
       {mode === "photo" &&
         (idCard ? (
           <>
@@ -151,7 +347,11 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
               className="sr-only"
               type="file"
               accept="image/*"
-              onChange={(e) => onIdPicked(e.target.files?.[0])}
+              multiple
+              onChange={(e) => {
+                openFiles(e.target.files);
+                e.target.value = "";
+              }}
             />
             <label className="btn ghost" style={{ marginTop: 8 }} htmlFor="idfile">
               Replace ID (camera)
@@ -162,16 +362,23 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
               type="file"
               accept="image/*"
               capture="environment"
-              onChange={(e) => onIdPicked(e.target.files?.[0])}
+              onChange={(e) => {
+                openFiles(e.target.files);
+                e.target.value = "";
+              }}
             />
             <button
               type="button"
               className="btn ghost"
               style={{ marginTop: 8 }}
               onClick={() => {
+                setFiles([]);
+                setFileIndex(0);
+                onBulkFiles?.([]);
                 setIdCard(null);
                 setPhoto(null);
                 setExtra(null);
+                setSharp(null);
                 setFetched(null);
                 setScanBox(null);
               }}
@@ -179,7 +386,7 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
               Delete photos
             </button>
           </>
-        ) : (
+        ) : !scanFile ? (
           <>
             <div className={"capture" + (dragging ? " dragover" : "")} {...dropProps}>
               <span className="big" aria-hidden="true">
@@ -188,7 +395,7 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
               <p style={{ margin: "0 0 12px" }}>
                 <b>Upload Emirates ID</b>
               </p>
-              <p className="drop-hint">Drag the ID card photo here, or use a button below.</p>
+              <p className="drop-hint">Upload the ID photo. Drag the blue box onto one card, crop it, crop the face, then extract the name and ID.</p>
               <label className="btn" style={{ marginTop: 8 }} htmlFor="idfile">
                 Open camera
               </label>
@@ -198,17 +405,24 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
                 type="file"
                 accept="image/*"
                 capture="environment"
-                onChange={(e) => onIdPicked(e.target.files?.[0])}
+                onChange={(e) => {
+                  openFiles(e.target.files);
+                  e.target.value = "";
+                }}
               />
               <label className="btn sec" style={{ marginTop: 10 }} htmlFor="idfile2">
-                Choose photo
+                Choose photos
               </label>
               <input
                 id="idfile2"
                 className="sr-only"
                 type="file"
                 accept="image/*"
-                onChange={(e) => onIdPicked(e.target.files?.[0])}
+                multiple
+                onChange={(e) => {
+                  openFiles(e.target.files);
+                  e.target.value = "";
+                }}
               />
             </div>
             <button className="btn ghost" style={{ marginTop: 8 }} onClick={useSample}>
@@ -218,15 +432,16 @@ export function Capture({ job, onSaved }: { job: Job; onSaved: () => void }) {
               Type details without ID
             </button>
           </>
-        ))}
+        ) : null)}
       <div>{scanBox}</div>
       <TraineeFields
         job={job}
         fetched={fetched || {}}
         showPaste={showPaste}
         onPasted={(f) => fill(f, false)}
-        images={{ idCard, photo, extra }}
+        images={{ idCard, photo, extra, sharp }}
         onSaved={onSaved}
+        readEmployer={readEmployer}
       />
     </>
   );
@@ -237,8 +452,9 @@ function TraineeFields(props: {
   fetched: Fetched;
   showPaste: boolean;
   onPasted: (f: Fetched) => void;
-  images: { idCard: string | null; photo: string | null; extra: string | null };
+  images: { idCard: string | null; photo: string | null; extra: string | null; sharp?: string | null };
   onSaved: () => void;
+  readEmployer?: boolean;
 }) {
   const { job, fetched: f, images } = props;
   const { toast } = useField();
@@ -246,7 +462,6 @@ function TraineeFields(props: {
     .split(" · ")
     .map((s) => s.trim())
     .filter(Boolean);
-  const companies = [...new Set([job.customerName, ...(job.companies || [])].filter(Boolean))];
   const [v, setV] = useState({
     name: "",
     id: "",
@@ -261,13 +476,12 @@ function TraineeFields(props: {
   const [paste, setPaste] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-
   function applyCard(next: Fetched) {
     const write = () =>
       setV((prev) => ({
         ...prev,
-        name: next.name || prev.name,
-        id: next.idOrVisaNo || prev.id,
+        name: next.name ?? prev.name,
+        id: next.idOrVisaNo ?? prev.id,
         dob: next.dateOfBirth || prev.dob,
         nat: next.nationality || prev.nat,
         mob: next.mobileNumber || prev.mob,
@@ -283,8 +497,8 @@ function TraineeFields(props: {
   }
 
   useEffect(() => {
-    if (f.name || f.idOrVisaNo || f.nationality || f.dateOfBirth || f.company || f.trainingDate) applyCard(f);
-  }, [f.name, f.idOrVisaNo, f.nationality, f.dateOfBirth, f.mobileNumber, f.company, f.trainingDate, f.course]);
+    if (f) applyCard(f);
+  }, [f]);
 
   const set = (k: keyof typeof v) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setV({ ...v, [k]: e.target.value });
@@ -295,20 +509,23 @@ function TraineeFields(props: {
     try {
       let text = paste.trim();
       if (!text) {
-        const pics = [images.idCard, images.extra].filter((x): x is string => !!x);
+        const pics = [images.sharp, images.idCard, images.extra].filter((x): x is string => !!x);
         if (!pics.length) {
           setErr("Upload the Emirates ID first, then tap Fill from ID photo.");
           return;
         }
-        toast("Reading the card…");
-        text = await ocrEmiratesCard(pics);
+        toast("Reading the zoomed card…");
+        text = await ocrEmiratesCard(images.sharp ? [images.sharp] : pics);
       }
       if (!text.trim()) {
         setErr("Could not read the card. Type the name and ID, or paste the card text.");
         return;
       }
       const got = await fapi<Fetched>("POST", `/api/training/${job.id}/id-fetch`, { ocrText: text });
-      if (!got.idOrVisaNo) got.idOrVisaNo = formatEidLocal(text);
+      const local = fieldsFromCardText(text);
+      got.name = local.name;
+      got.idOrVisaNo = local.id;
+      if (!got.dateOfBirth) got.dateOfBirth = dateFromCardText(text);
       applyCard(got);
       props.onPasted(got);
       toast(
@@ -368,14 +585,6 @@ function TraineeFields(props: {
 
   return (
     <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
-      {images.idCard && (
-        <button className="btn" style={{ marginTop: 12 }} disabled={busy} type="button" onClick={fillFromId}>
-          Fill fields from this photo
-        </button>
-      )}
-      <p className="mini" style={{ margin: "8px 0 0" }}>
-        If name or ID is empty, tap Fill fields from this photo.
-      </p>
       {props.showPaste && (
         <>
           <label className="fl" htmlFor="ocr">
@@ -432,16 +641,12 @@ function TraineeFields(props: {
       />
       <label className="fl">Phone number (optional)</label>
       <input value={v.mob} inputMode="tel" autoComplete="off" onChange={set("mob")} />
-      <label className="fl">Company *</label>
-      {companies.length > 1 ? (
-        <select value={v.company} onChange={set("company")}>
-          {companies.map((c) => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
-      ) : (
-        <input value={v.company} onChange={set("company")} />
-      )}
+      <label className="fl">{props.readEmployer ? "Employed by *" : "Company *"}</label>
+      <input
+        value={v.company}
+        placeholder={props.readEmployer ? "Filled from the ID back" : "Employer of this trainee"}
+        onChange={set("company")}
+      />
       {courses.length > 1 && (
         <>
           <label className="fl">Training course *</label>

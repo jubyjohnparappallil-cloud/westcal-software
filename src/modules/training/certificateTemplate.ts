@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
-import type { TrainingCertificate, TrainingJob } from "./training.js";
+import { printedTrNo, type TrainingCertificate, type TrainingJob } from "./training.js";
 import { applyDocumentControlFooter, DOC_CONTROL, drawWestcalLetterhead } from "./trainingForms.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -93,15 +93,15 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
     name: c.name,
     eid: c.idOrVisaNo || trainee?.idOrVisaNo || "",
     company: (() => {
-      const pick = [c.company, job.certificateUnder, trainee?.company, job.customerName]
+      const pick = [trainee?.company, c.company, job.certificateUnder, job.customerName]
         .map((v) => String(v || "").trim())
         .find((v) => v.length > 2);
       return pick || "";
     })(),
     course: (c.course || "").trim(),
     certificateNo: c.certificateNo,
-    jobNo: c.jobNo || job.jobNo,
-    orderNo: job.jobOrderNo || job.jobNo,
+    jobNo: printedTrNo(job),
+    orderNo: printedTrNo(job),
     trainingDate: c.trainingDate,
     trainingTime: job.trainingTime || "",
     expiresOn: c.expiresOn,
@@ -207,7 +207,7 @@ function esc(value: unknown): string {
 /** The designed certificate. Shown when the ID card QR or the certificate QR is scanned. */
 export function printedCertificateVerifyHtml(c: TrainingCertificate, job: TrainingJob): string {
   const s = certificateSlots(c, job);
-  const company = String(job.certificateUnder || c.company || job.customerName || "-");
+  const company = s.company || "-";
   const photo = s.photoDataUrl
     ? `<div class="cert-photo"><img src="${esc(s.photoDataUrl)}" alt=""></div>`
     : "";
@@ -224,17 +224,19 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 .cert-photo{position:absolute;right:15.5%;top:52.4%;width:11%;aspect-ratio:3/4;height:auto;overflow:hidden;border:2px solid #c9a227;background:#eee;z-index:2}
 .cert-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 22%;display:block}
 .cert-marks{position:absolute;left:36%;top:85.2%;width:24%;height:auto;object-fit:contain;z-index:2;pointer-events:none}
-.cert-name{position:absolute;left:8%;right:30%;top:54.6%;text-align:center;font-weight:700;font-size:2.15cqi;text-transform:uppercase;white-space:nowrap;line-height:1;color:#16325c}
+.cert-name{position:absolute;left:8%;right:30%;top:54.6%;text-align:center;font-weight:700;font-size:16px;font-size:2.15cqi;text-transform:uppercase;white-space:nowrap;line-height:1;color:#16325c}
 .cert-rule{position:absolute;left:32%;width:18%;top:57.4%;border:0;border-top:1px solid #222;margin:0}
-.lead{position:absolute;left:10%;right:30%;top:58.4%;text-align:center;font-style:italic;font-weight:700;font-size:1.45cqi;color:#16325c;white-space:nowrap}
-.cert-course{position:absolute;left:8%;right:30%;top:62.2%;text-align:center;font-weight:700;font-size:2cqi;text-transform:uppercase;color:#16325c;white-space:nowrap}
-.meta-col{position:absolute;top:68.2%;font-weight:700;font-size:1.45cqi;color:#16325c;text-align:left;line-height:1.85}
+.lead{position:absolute;left:10%;right:30%;top:58.4%;text-align:center;font-style:italic;font-weight:700;font-size:13px;font-size:1.45cqi;color:#16325c;white-space:nowrap}
+.cert-course{position:absolute;left:8%;right:30%;top:62.2%;text-align:center;font-weight:700;font-size:15px;font-size:2cqi;text-transform:uppercase;color:#16325c;white-space:nowrap}
+.meta-col{position:absolute;top:68.2%;font-weight:700;font-size:13px;font-size:1.45cqi;color:#16325c;text-align:left;line-height:1.85}
 .meta-left{left:14%}
 .meta-right{left:54%}
 .meta-col span{display:inline-block;min-width:13.5cqi}
-.auth{position:absolute;left:15%;top:77%;width:22%;text-align:left;font-weight:700;font-style:italic;letter-spacing:.8px;font-size:1.6cqi}
-.contact{position:absolute;left:9%;top:84.8%;width:24%;text-align:left;font-weight:700;font-size:1.12cqi;line-height:1.15;color:#16325c}
-.qr{position:absolute;right:28%;top:76.4%;width:10%;background:#fff;padding:2px;box-sizing:border-box;z-index:2}
+.auth{position:absolute;left:15%;top:77%;width:22%;text-align:left;font-weight:700;font-style:italic;letter-spacing:.8px;font-size:14px;font-size:1.6cqi}
+.auth-sign{position:absolute;left:14%;top:79.4%;width:24%;height:5.4%;object-fit:contain;object-position:left center;z-index:3}
+.auth-seal{position:absolute;left:39%;top:77.4%;width:13%;height:auto;object-fit:contain;z-index:3}
+.contact{position:absolute;left:9%;top:84.8%;width:24%;text-align:left;font-weight:700;font-size:11px;font-size:1.12cqi;line-height:1.15;color:#16325c}
+.qr{position:absolute;right:22%;top:75%;width:16%;background:#fff;padding:6px;box-sizing:border-box;z-index:4}
 .qr img{width:100%;height:auto;display:block;background:#fff}
 </style></head><body>
 <div class="page"><div class="west-cert">
@@ -251,10 +253,12 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
   </div>
   <div class="meta-col meta-right">
     <div><span>Certificate No.</span> ${esc(s.certificateNo)}</div>
-    <div><span>Job No.</span> ${esc(job.jobNo || s.jobNo)}</div>
+    <div><span>Job No.</span> ${esc(s.jobNo)}</div>
     <div><span>Expiry Date</span> ${esc(formatCertDate(s.expiresOn))}</div>
   </div>
   <div class="auth">AUTHORISED BY</div>
+  <img class="auth-sign" src="/certificate-signature.png?v=20261017s" alt="Authorized signature">
+  <img class="auth-seal" src="/certificate-company-seal.png?v=20261017s" alt="Westcal seal">
   <div class="contact">Westcal Instrumentation and Calibration<br>Services LLC<br>Morocco Cluster, International City,<br>Dubai, UAE.<br>info@westcal.ae<br>+971566654326 &amp; +97145762773.<br>https://westcal.ae/</div>
   ${ref ? `<div class="qr"><img src="/verify/${ref}/qr.png" alt="Scan to verify"></div>` : ""}
 </div></div>
@@ -385,6 +389,14 @@ function drawPrintedCertificate(
 
   doc.fillColor(navy).font("Times-BoldItalic").fontSize(9)
     .text("AUTHORISED BY", px(118), py(798), { width: px(130), align: "left", characterSpacing: 0.6, lineBreak: false });
+  try {
+    const sign = readFileSync(join(__dirname, "..", "..", "ui", "certificate-signature.png"));
+    doc.image(sign, px(112), py(822), { fit: [px(160), py(42)] });
+  } catch { /* signature optional */ }
+  try {
+    const seal = readFileSync(join(__dirname, "..", "..", "ui", "certificate-company-seal.png"));
+    doc.image(seal, px(300), py(792), { fit: [px(78), py(78)] });
+  } catch { /* seal optional */ }
 
   const contactX = px(68);
   const contactW = px(168);
@@ -404,11 +416,11 @@ function drawPrintedCertificate(
   }
 
   if (qrPng) {
-    const qrSize = 52;
-    const qrX = px(488);
-    const qrY = py(786);
+    const qrSize = 78;
+    const qrX = px(470);
+    const qrY = py(768);
     doc.save();
-    doc.rect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 6).fill("#ffffff");
+    doc.rect(qrX - 8, qrY - 8, qrSize + 16, qrSize + 16).fill("#ffffff");
     doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
     doc.restore();
   }
@@ -428,8 +440,8 @@ export async function sendTrainingCertificatePdf(
   const qrPng = qrUrl
     ? await QRCode.toBuffer(qrUrl, {
         errorCorrectionLevel: "M",
-        margin: 1,
-        width: 240,
+        margin: 2,
+        width: 420,
         color: { dark: "#000000", light: "#ffffff" },
       })
     : null;
@@ -507,29 +519,31 @@ export async function sendTrainingCertificateContentPdf(
   res: ServerResponse,
   job: TrainingJob,
   c: TrainingCertificate,
-  verifyUrl?: string
+  verifyUrl?: string,
+  hidePhoto = false
 ): Promise<void> {
   const s = certificateSlots(c, job);
   const qrPng = verifyUrl
     ? await QRCode.toBuffer(verifyUrl, {
         errorCorrectionLevel: "M",
-        margin: 1,
-        width: 240,
+        margin: 2,
+        width: 420,
         color: { dark: "#000000", light: "#ffffff" },
       })
     : null;
+  const fileTag = hidePhoto ? "data-nophoto" : "data";
   const doc = new PDFDocument({
     size: "A4",
     margin: 0,
     bufferPages: true,
-    info: { Title: `${s.certificateNo} inside data` },
+    info: { Title: `${s.certificateNo} inside data${hidePhoto ? " without photo" : ""}` },
   });
   res.writeHead(200, {
     "Content-Type": "application/pdf",
     "Cache-Control": "no-store",
-    "Content-Disposition": `attachment; filename="${s.certificateNo.replace(/[^a-zA-Z0-9_-]/g, "_")}-data.pdf"`,
+    "Content-Disposition": `attachment; filename="${s.certificateNo.replace(/[^a-zA-Z0-9_-]/g, "_")}-${fileTag}.pdf"`,
   });
   doc.pipe(res);
-  drawPrintedCertificate(doc, s, qrPng, null, true);
+  drawPrintedCertificate(doc, s, qrPng, null, true, hidePhoto);
   doc.end();
 }

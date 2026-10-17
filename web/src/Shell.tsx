@@ -5,6 +5,7 @@ import { ROLE_NAMES, initials } from "./constants";
 import type { Notification } from "./types";
 import { Certificates } from "./pages/Certificates";
 import { Courses } from "./pages/Courses";
+import { Numbering } from "./pages/Numbering";
 import { Dashboard } from "./pages/Dashboard";
 import { Jobs } from "./pages/jobs/Jobs";
 import { Reports } from "./pages/Reports";
@@ -165,6 +166,7 @@ function ViewRouter({ view }: { view: View }) {
     case "jobs":
       if (nav.jobService === "Training" && nav.trainingTab === "courses" && perms.canAddCourse()) return <Courses />;
       if (nav.jobService === "Training" && nav.trainingTab === "people" && perms.isSuper()) return <Trainers />;
+      if (nav.jobService === "Training" && nav.trainingTab === "numbers" && perms.isSuper()) return <Numbering />;
       return <Jobs key={nav.jobService} />;
   }
   return null;

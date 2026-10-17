@@ -51,7 +51,7 @@ export class UsersService {
     if (!input.roleIds || input.roleIds.length < 1) {
       throw new ValidationError("at least one role is required", "roleIds");
     }
-    if (this.byIdentifier.has(identifier)) {
+    if (this.identifierOwner(identifier)) {
       throw new ConflictError("identifier already exists", "identifier");
     }
     const email = normalizeEmail(input.email);
@@ -106,8 +106,45 @@ export class UsersService {
     return u;
   }
 
+  /** Rename the sign-in name and keep the lookup map in step with it. */
+  setIdentifier(id: string, identifier: string): void {
+    const next = (identifier ?? "").trim();
+    if (next.length < 1 || next.length > 255) {
+      throw new ValidationError("identifier must be 1 to 255 characters", "identifier");
+    }
+    const u = this.getUser(id);
+    const owner = this.identifierOwner(next);
+    if (owner && owner !== id) {
+      throw new ConflictError("identifier already exists", "identifier");
+    }
+    this.dropIdentifierKeys(id);
+    u.identifier = next;
+    this.byIdentifier.set(next, id);
+    u.updatedAt = new Date();
+  }
+
+  /** Change the sign-in email and keep the lookup map in step with it. */
+  setEmail(id: string, email: string): void {
+    const u = this.getUser(id);
+    const next = normalizeEmail(email);
+    if (next) {
+      const owner = this.byEmail.get(next);
+      if (owner && owner !== id) {
+        throw new ConflictError("email already registered", "email");
+      }
+    }
+    this.dropEmailKeys(id);
+    if (next) {
+      u.email = next;
+      this.byEmail.set(next, id);
+    } else {
+      delete u.email;
+    }
+    u.updatedAt = new Date();
+  }
+
   hasIdentifier(identifier: string): boolean {
-    return this.byIdentifier.has(identifier);
+    return this.identifierOwner(identifier) !== undefined;
   }
 
   hasEmail(email: string): boolean {
@@ -150,14 +187,14 @@ export class UsersService {
   deleteUser(id: string): void {
     const u = this.getUser(id);
     this.onDeactivate(id);          // end sessions first
-    this.byIdentifier.delete(u.identifier);
-    if (u.email) this.byEmail.delete(normalizeEmail(u.email));
+    this.dropIdentifierKeys(id);
+    this.dropEmailKeys(id);
     this.users.delete(id);
   }
 
-  /** Adapter for Auth's user lookup. Accepts the user ID or the registered email. */
+  /** Adapter for Auth's user lookup. Accepts the username, the person's name, or the registered email. */
   lookupForAuth(identifier: string): AuthUser | undefined {
-    const id = this.byIdentifier.get(identifier) ?? this.byEmail.get(normalizeEmail(identifier));
+    const id = this.identifierOwner(identifier) ?? this.byEmail.get(normalizeEmail(identifier)) ?? this.displayNameOwner(identifier);
     if (!id) return undefined;
     const u = this.users.get(id)!;
     return {
@@ -166,5 +203,38 @@ export class UsersService {
       credentialHash: u.credentialHash,
       status: u.status,
     };
+  }
+
+  /** The person's name, when only one account uses it. Capitals are ignored. */
+  private displayNameOwner(name: string): string | undefined {
+    const want = (name ?? "").trim().toLowerCase();
+    if (!want) return undefined;
+    const matches = [...this.users.values()].filter((user) => (user.displayName || "").trim().toLowerCase() === want);
+    return matches.length === 1 ? matches[0].id : undefined;
+  }
+
+  /** Exact match first, then capitals ignored, so the sign-in page can send a lowercase name. */
+  private identifierOwner(identifier: string): string | undefined {
+    const trimmed = (identifier ?? "").trim();
+    if (!trimmed) return undefined;
+    const exact = this.byIdentifier.get(trimmed);
+    if (exact) return exact;
+    const want = trimmed.toLowerCase();
+    for (const [key, id] of this.byIdentifier) {
+      if (key.toLowerCase() === want) return id;
+    }
+    return undefined;
+  }
+
+  private dropIdentifierKeys(userId: string): void {
+    for (const [key, id] of this.byIdentifier) {
+      if (id === userId) this.byIdentifier.delete(key);
+    }
+  }
+
+  private dropEmailKeys(userId: string): void {
+    for (const [key, id] of this.byEmail) {
+      if (id === userId) this.byEmail.delete(key);
+    }
   }
 }

@@ -354,6 +354,37 @@ export function sheetsToJob(s: Sheets) {
   };
 }
 
+function printedToday(): string {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+}
+
+/** Keep a change-record line when the protocol is saved with new values. */
+export function recordProtocolEdit(sheets: Sheets, previous: Sheets): Sheets {
+  const now = sheetsToJob(sheets);
+  const before = sheetsToJob(previous);
+  const sameTables = JSON.stringify({ ...now, protocolChanges: undefined }) === JSON.stringify({ ...before, protocolChanges: undefined });
+  if (sameTables) return sheets;
+  const alreadyNoted = (now.protocolChanges || []).some(
+    (row) => row.date === printedToday() && /protocol/i.test(row.summary || ""),
+  );
+  if (alreadyNoted) return sheets;
+  const filled = sheets.chg.filter((r) => SHEET_COLUMNS.chg.some((c) => str(r[c]).trim()));
+  return {
+    ...sheets,
+    chg: [
+      ...filled,
+      {
+        ...emptySheetRow("chg"),
+        date: printedToday(),
+        sum: "Protocol details updated",
+        why: "Saved from protocol edit",
+        ok: "",
+      },
+    ],
+  };
+}
+
 export function readLayoutImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();

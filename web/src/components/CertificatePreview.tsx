@@ -1,4 +1,4 @@
-import { certDate } from "../lib/jobs";
+import { certDate, printedTrNo } from "../lib/jobs";
 import type { Certificate, Job } from "../types";
 
 export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
@@ -35,7 +35,7 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
           <span>Certificate No.</span> {c.certificateNo || ""}
         </div>
         <div>
-          <span>Job No.</span> {j.jobNo || "-"}
+          <span>Job No.</span> {printedTrNo(j) || "-"}
         </div>
         <div>
           <span>Expiry Date</span> {certDate(c.expiresOn)}

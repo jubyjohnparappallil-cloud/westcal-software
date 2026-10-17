@@ -28,6 +28,7 @@ export function TrainingTabs() {
         {tab("jobs", "Jobs")}
         {perms.canAddCourse() && tab("courses", "Courses")}
         {perms.isSuper() && tab("people", "Trainers & Engineers")}
+        {perms.isSuper() && tab("numbers", "TR numbers")}
         {perms.canReports() && <button onClick={() => go("reports")}>Reports</button>}
         {perms.canViewCerts() && <button onClick={() => goToCertificates("pending")}>Certificates</button>}
       </div>

@@ -11,8 +11,24 @@ export const downloads = {
     downloadFile(`${certBase(jobId, certId)}/layout-pdf`, no + "-layout.pdf"),
   certificateContent: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/content-pdf`, no + "-data.pdf"),
+  certificateContentNoPhoto: (jobId: string, certId: string, no: string) =>
+    downloadFile(`${certBase(jobId, certId)}/content-nophoto-pdf`, no + "-data-nophoto.pdf", {
+      failMessage: "Inside data without photo download failed",
+    }),
+  certificateOld: (jobId: string, certId: string, no: string) =>
+    downloadFile(`${certBase(jobId, certId)}/old-docx`, no + "-old-design.docx", {
+      failMessage: "Old design document download failed",
+    }),
+  certificateSpecial: (jobId: string, certId: string, no: string) =>
+    downloadFile(`${certBase(jobId, certId)}/special-docx`, no + "-special.docx", {
+      failMessage: "Special certificate download failed",
+    }),
   card: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/card-pdf`, no + "-card.pdf", { failMessage: "Card PDF download failed" }),
+  cardClassic: (jobId: string, certId: string, no: string) =>
+    downloadFile(`${certBase(jobId, certId)}/classic-card-pdf`, no + "-classic-card.pdf", {
+      failMessage: "Old ID card download failed",
+    }),
   cardLayout: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/card-layout-pdf`, no + "-card-design.pdf", {
       failMessage: "Card design download failed",

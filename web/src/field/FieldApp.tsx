@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Job, Session } from "../types";
+import { printedTrNo } from "../lib/jobs";
 import { NATIVE, apiBase, fapi, setApiBase, setFieldSession } from "./api";
 import { JobView } from "./JobView";
 type Tab = "dashboard" | "jobs" | "submitted" | "alerts";
@@ -321,7 +322,7 @@ function JobCard({ j, children }: { j: Job; children?: React.ReactNode }) {
   return (
     <button className="job" onClick={() => openJob(j.id)}>
       <div className="row">
-        <span className="no grow">{String(j.jobNo || "").replace(/^WC-/i, "")}</span>
+        <span className="no grow">{isTrainingJob(j) ? printedTrNo(j) : String(j.jobNo || "").replace(/^WC-/i, "")}</span>
         <span className={chipClass(j.status)}>{statusLabel(j.status)}</span>
       </div>
       <div className="cust">{j.customerName}</div>

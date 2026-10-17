@@ -1,8 +1,10 @@
 import { useRef, useState } from "react";
 import { api } from "../api";
+import { useApp } from "../app-context";
+import { usePhotoCrop, type CropPurpose } from "./PhotoCropper";
 import { Pad, type PadHandle } from "../field/Pad";
-import { formatEidLocal, ocrEmiratesCard, prepareIdPhoto, shrinkImage } from "../field/ocr";
-import { jobCourses } from "../lib/jobs";
+import { formatEidLocal, imageForRead, ocrEmiratesCard, prepareIdPhoto, shrinkImage } from "../field/ocr";
+import { editCourseChoices, jobCourses } from "../lib/jobs";
 import type { Attendee, Job } from "../types";
 
 /** Draw or upload a signature (trainee or Certificate Coordinator). */
@@ -101,27 +103,32 @@ export function TraineeEditor({
   onDeleted?: () => void;
   extraButtons?: React.ReactNode;
 }) {
-  const courses = jobCourses(job);
-  const options = courses.length ? courses : [attendee.course || job.course || ""];
+  const { perms } = useApp();
+  const choices = editCourseChoices(job, attendee);
+  const courseOptions = choices.options.length ? choices.options : jobCourses(job);
+  const [ticked, setTicked] = useState(choices.selected);
+  const [backPreview, setBackPreview] = useState("");
   const [f, setF] = useState({
     name: attendee.name || "",
     idOrVisaNo: attendee.idOrVisaNo || "",
     mobileNumber: attendee.mobileNumber || "",
     company: attendee.company || "",
-    course: attendee.course || job.course || options[0] || "",
   });
 
   async function save() {
     try {
-      await api("PATCH", `/api/training/${job.id}/attendees/${attendee.id}`, f);
+      if (courseOptions.length > 1 && !ticked.length) throw new Error("Tick the training course for this trainee.");
+      await api("PATCH", `/api/training/${job.id}/attendees/${attendee.id}`, { ...f, courses: ticked });
       onSaved();
     } catch (e) {
       alert((e as Error).message);
     }
   }
 
+  const { crop, dialog: cropDialog } = usePhotoCrop();
+
   async function uploadIdFile(file: File) {
-    const { card, portrait, ocrCard } = await prepareIdPhoto(file);
+    const { card, portrait, ocrCard } = await prepareIdPhoto(file, { ocrSide: 1800, clarify: true });
     let text = "";
     let fetched: Record<string, string> = {};
     try {
@@ -133,7 +140,7 @@ export function TraineeEditor({
     const eid = (fetched.idOrVisaNo || formatEidLocal(text) || "").trim();
     await api("PATCH", `/api/training/${job.id}/attendees/${attendee.id}`, {
       idCardDataUrl: card,
-      photoDataUrl: portrait || card,
+      ...(attendee.photoDataUrl ? {} : { photoDataUrl: portrait || card }),
       ...(eid ? { idOrVisaNo: eid } : {}),
       ...(fetched.name ? { name: fetched.name } : {}),
       nationality: fetched.nationality || undefined,
@@ -145,8 +152,24 @@ export function TraineeEditor({
     onSaved();
   }
 
+  async function uploadBack(file: File) {
+    const image = await shrinkImage(file, 1400);
+    setBackPreview(image);
+    const text = await ocrEmiratesCard([await imageForRead(file)]);
+    const fetched = text.trim()
+      ? await api<{ employer?: string; company?: string }>("POST", `/api/training/${job.id}/id-fetch`, { ocrText: text })
+      : {};
+    const employer = (fetched.employer || fetched.company || "").trim();
+    if (!employer) throw new Error("Could not read the Employer line on the ID back. Type it in Company.");
+    await api("PATCH", `/api/training/${job.id}/attendees/${attendee.id}`, { company: employer });
+    setF((x) => ({ ...x, company: employer }));
+    onSaved();
+  }
+
   async function uploadFace(file: File) {
-    await api("PATCH", `/api/training/${job.id}/attendees/${attendee.id}`, { photoDataUrl: await shrinkImage(file) });
+    const cropped = await crop(file, "photo");
+    if (!cropped) return;
+    await api("PATCH", `/api/training/${job.id}/attendees/${attendee.id}`, { photoDataUrl: await shrinkImage(cropped, 800) });
     onSaved();
   }
 
@@ -159,6 +182,7 @@ export function TraineeEditor({
 
   return (
     <>
+      {cropDialog}
       <div className="attacts" style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <label className="btn ghost sm" htmlFor={`repid_${attendee.id}`}>
           Re-upload EID
@@ -171,7 +195,11 @@ export function TraineeEditor({
           onChange={(e) => {
             const file = e.target.files?.[0];
             e.target.value = "";
-            if (file) uploadIdFile(file).catch((err) => alert((err as Error).message));
+            if (file) {
+              crop(file, "id")
+                .then((cropped) => cropped && uploadIdFile(cropped))
+                .catch((err) => alert((err as Error).message));
+            }
           }}
         />
         <label className="btn ghost sm" htmlFor={`repph_${attendee.id}`}>
@@ -210,12 +238,17 @@ export function TraineeEditor({
           <input value={f.company} onChange={(e) => setF({ ...f, company: e.target.value })} />
         </div>
         <div className="span-2">
-          <label>Course</label>
-          <select value={f.course} onChange={(e) => setF({ ...f, course: e.target.value })}>
-            {options.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
+          <label>Training course</label>
+          {courseOptions.map((course) => (
+            <label key={course} style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 500, marginBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={ticked.includes(course)}
+                onChange={(e) => setTicked(e.target.checked ? [...ticked, course] : ticked.filter((item) => item !== course))}
+              />
+              {course}
+            </label>
+          ))}
         </div>
         <div className="span-2">
           <label>Emirates ID card</label>
@@ -223,8 +256,24 @@ export function TraineeEditor({
             current={attendee.idCardDataUrl}
             hasCard={!!(attendee.hasIdCard || attendee.idCardDataUrl)}
             onFile={uploadIdFile}
+            cropPurpose="id"
           />
         </div>
+        {perms.canIssueCerts() && (
+          <div className="span-2">
+            <label>ID back side</label>
+            <p className="hint">The Employer on the back of the Emirates ID is printed on the special certificate.</p>
+            <IdDropZone
+              current={backPreview}
+              onFile={uploadBack}
+              cropPurpose="back"
+              idle="Drag the ID back side here or click to upload"
+              replace="Drag a new ID back side here or click to replace"
+              busyText="Reading employer…"
+              alt="Emirates ID back"
+            />
+          </div>
+        )}
         <div className="span-2">
           <SignBox
             label="Trainee signature"
@@ -252,23 +301,43 @@ export function IdDropZone({
   current,
   hasCard,
   onFile,
+  onPicked,
+  cropPurpose = "id",
+  idle = "Drag the ID card photo here or click to upload",
+  replace = "Drag a new ID card here or click to replace",
+  busyText = "Reading ID card…",
+  alt = "Emirates ID card",
 }: {
   current?: string;
   hasCard?: boolean;
   onFile: (file: File) => Promise<void>;
+  onPicked?: (file: File) => void;
+  cropPurpose?: CropPurpose | "none";
+  idle?: string;
+  replace?: string;
+  busyText?: string;
+  alt?: string;
 }) {
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const { crop, dialog } = usePhotoCrop();
   const showCard = current && current.startsWith("data:");
 
   async function take(file: File | undefined) {
     if (!file) return;
     if (!file.type.startsWith("image/")) return setErr("Drop a photo of the ID card (JPG or PNG).");
     setErr("");
+    onPicked?.(file);
+    let next = file;
+    if (cropPurpose !== "none") {
+      const cropped = await crop(file, cropPurpose);
+      if (!cropped) return;
+      next = cropped;
+    }
     setBusy(true);
     try {
-      await onFile(file);
+      await onFile(next);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -278,6 +347,7 @@ export function IdDropZone({
 
   return (
     <>
+      {dialog}
       <label
         className={"id-drop" + (over ? " over" : "")}
         onDragOver={(e) => {
@@ -292,14 +362,8 @@ export function IdDropZone({
         }}
       >
         <input type="file" accept="image/*" hidden onChange={(e) => (take(e.target.files?.[0]), (e.target.value = ""))} />
-        {showCard && <img src={current} alt="Emirates ID card" />}
-        <span>
-          {busy
-            ? "Reading ID card…"
-            : showCard || hasCard
-              ? "Drag a new ID card here or click to replace"
-              : "Drag the ID card photo here or click to upload"}
-        </span>
+        {showCard && <img src={current} alt={alt} />}
+        <span>{busy ? busyText : showCard || hasCard ? replace : idle}</span>
       </label>
       <div className="err">{err}</div>
     </>

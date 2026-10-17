@@ -40,6 +40,29 @@ const newLine = (patch: Partial<LineItem> = {}): LineItem => ({
   ...patch,
 });
 
+/** One line per ticked course. Rows typed by hand stay underneath. */
+function linesFromCourses(names: string[], current: LineItem[]): LineItem[] {
+  const manual = current.filter((line) => !line.fromCourse && (line.description.trim() || line.qty.trim() || line.remarks.trim()));
+  const auto = names.map((name) => {
+    const found = current.find((line) => line.fromCourse && line.description.trim().toLowerCase() === name.trim().toLowerCase());
+    return found || newLine({ description: name, qty: "1", fromCourse: true });
+  });
+  return [...auto, ...manual];
+}
+
+function initialLines(job: Job | null, training: boolean): LineItem[] {
+  const picked = job && training ? jobCourses(job) : [];
+  const saved = job
+    ? ((job.lineItems || []) as Array<{ description?: string; qty?: string; remarks?: string }>).map((line) => {
+        const description = String(line.description || "");
+        const fromCourse = picked.some((name) => name.toLowerCase() === description.trim().toLowerCase());
+        return newLine({ description, qty: line.qty || "", remarks: line.remarks || "", fromCourse });
+      })
+    : [];
+  if (!training) return saved.length ? saved : [newLine()];
+  return linesFromCourses(picked, saved);
+}
+
 export function JobFormModal(props: FormProps) {
   return props.service === "Mapping" ? <MappingFormModal {...props} /> : <ServiceJobFormModal {...props} />;
 }
@@ -124,15 +147,7 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
   const [courseSearch, setCourseSearch] = useState("");
   const [newCourse, setNewCourse] = useState("");
   const [courseMsg, setCourseMsg] = useState({ text: "", ok: false });
-  const [lines, setLines] = useState<LineItem[]>(() =>
-    job
-      ? ((job.lineItems || []) as any[]).map((l) =>
-          newLine({ description: l.description || "", qty: l.qty || "", remarks: l.remarks || "", fromCourse: true }),
-        )
-      : training
-        ? []
-        : [newLine()],
-  );
+  const [lines, setLines] = useState<LineItem[]>(() => initialLines(job, training));
   const [codeTraining] = useState(job ? job.workCodeTraining !== false : training);
   const [codeCertification] = useState(job ? !!job.workCodeCertification : !training);
   const [err, setErr] = useState("");
@@ -168,8 +183,7 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
     setPicked(next);
     const text = next.map((c) => courseDescription(list, c)).join("\n");
     if (!description.value || description.fromCourse) setDescription({ value: text, fromCourse: true });
-    const typed = lines.filter((l) => l.description && !l.fromCourse);
-    setLines([...next.map((c) => newLine({ description: courseDescription(list, c), qty: "1", fromCourse: true })), ...typed]);
+    if (training) setLines((current) => linesFromCourses(next, current));
   }
   function toggleCourse(name: string) {
     pickCourses(picked.includes(name) ? picked.filter((c) => c !== name) : [...picked, name]);
@@ -207,13 +221,9 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
       return setErr(
         training ? (editId ? "Add at least one company." : "Add at least one company, then create the job.") : "Customer name is required.",
       );
-    if (!address)
-      return setErr(editId ? "Site address is required." : "Site address is required so the trainer/engineer can find the location.");
     if (!f.dateFrom) return setErr("Date from is required.");
     if (!f.dateTo) return setErr("Date to is required.");
     if (f.dateTo < f.dateFrom) return setErr("Date to cannot be before date from.");
-    if (!f.time) return setErr("Start time is required.");
-    if (!f.contact.trim()) return setErr("Contact name / number is required.");
     if (!course)
       return setErr(
         training
@@ -243,6 +253,7 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
       salesPerson: f.sales.trim(),
       clientRequirements: f.req.trim() || description.value.trim(),
       handedOverTo: f.handed.trim(),
+      jobOrderNo: undefined,
       workCodeTraining: codeTraining,
       workCodeCertification: codeCertification,
       lineItems: lineItems(),
@@ -341,11 +352,11 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
         <h4>2 · When and where</h4>
         <div className="job-row">
           <div className="span-2">
-            <label>Site address *</label>
+            <label>Site address</label>
             <input value={f.addr} placeholder="Building, area, city" onChange={bind("addr")} />
           </div>
           <div>
-            <label>Location *</label>
+            <label>Location</label>
             <select value={f.location} onChange={bind("location")}>
               <option>On-site</option>
               <option>Off-site</option>
@@ -360,7 +371,7 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
             />
           </div>
           <div>
-            <label>Start time *</label>
+            <label>Start time</label>
             <input type="time" value={f.time} onChange={bind("time")} />
           </div>
           <div>
@@ -377,8 +388,11 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
         <h4>3 · Who</h4>
         <div className="job-row">
           <div>
-            <label>Job order no</label>
-            <input value={f.order} readOnly />
+            <label>{training ? "Job No (TR)" : "Job order no"}</label>
+            <input value={f.order} readOnly placeholder={training ? "TR 4522" : ""} />
+            {training && (
+              <p className="hint">Set automatically. Super Admin changes the next number on the TR numbers tab.</p>
+            )}
           </div>
           <div>
             <label>Sales person</label>
@@ -389,7 +403,7 @@ function ServiceJobForm({ service, editId, loaded, onSaved }: { service: string;
             <input value={f.handed} placeholder="Name" onChange={bind("handed")} />
           </div>
           <div>
-            <label>Contact *</label>
+            <label>Contact</label>
             <input value={f.contact} placeholder="Name and mobile" onChange={bind("contact")} />
           </div>
           <div className="span-2">

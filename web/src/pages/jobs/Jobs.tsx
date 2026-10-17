@@ -5,7 +5,7 @@ import { InvoiceModal } from "../../components/InvoiceModal";
 import { PageError, PageLoading } from "../../components/PageLoading";
 import { Pagination, usePaged } from "../../components/Pagination";
 import { downloads } from "../../lib/downloads";
-import { jobCompanyNames, jobDateRange, jobExpiryDate, jobInDateRange, formatClock, newestFirst, statusClass } from "../../lib/jobs";
+import { isTrainingJob, jobCompanyNames, jobDateRange, jobExpiryDate, jobInDateRange, formatClock, newestFirst, printedTrNo, statusClass } from "../../lib/jobs";
 import type { Job } from "../../types";
 import { TrainingTabs } from "../Courses";
 import { CancelJobModal } from "./CancelJobModal";
@@ -48,7 +48,7 @@ export function Jobs() {
   const paged = usePaged(shown, from + "|" + to + "|" + time + "|" + stat);
   const canCreate = perms.canCreateService(service);
   const canDelete = perms.canDeleteJob();
-  const canEdit = perms.canEditJob();
+  const canEdit = service === "Mapping" ? perms.canEditMapping() : perms.canEditJob();
   const canCancel = perms.canCancelJob();
   const training = service === "Training";
   const openForm = (editId?: string) => setForm({ editId });
@@ -194,7 +194,7 @@ export function Jobs() {
                             setOpenId(j.id);
                           }}
                         >
-                          {j.jobNo}
+                          {isTrainingJob(j) ? printedTrNo(j) : j.jobNo}
                         </a>
                       </td>
                       <td>{jobDateRange(j)}</td>

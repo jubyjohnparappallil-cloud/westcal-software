@@ -1,12 +1,15 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "../api";
-import { formatEidLocal, ocrEmiratesCard, prepareIdPhoto } from "../field/ocr";
+import { useApp } from "../app-context";
+import { usePhotoCrop } from "./PhotoCropper";
+import { fieldsFromCardText, imageForRead, ocrEmiratesCard, prepareIdPhoto, shrinkImage } from "../field/ocr";
 import { jobCompanyNames, jobCourses, normalizeEid } from "../lib/jobs";
 import type { Job } from "../types";
 import { IdDropZone } from "./TraineeEditor";
 
 /** Office form to put trainees on the attendance sheet: one at a time (with ID card) or many at once. */
 export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void }) {
+  const { perms } = useApp();
   const companies = jobCompanyNames(j);
   const courses = jobCourses(j);
   const [mode, setMode] = useState<"one" | "many">("one");
@@ -18,13 +21,18 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
     course: courses.length > 1 ? courses[0] : j.course || "",
   });
   const [card, setCard] = useState<{ idCardDataUrl: string; photoDataUrl?: string; nationality?: string; dateOfBirth?: string } | null>(null);
+  const sourceRef = useRef<File | null>(null);
+  const pendingSource = useRef<File | null>(null);
+  const { crop, dialog: cropDialog } = usePhotoCrop();
+  const [backPreview, setBackPreview] = useState("");
   const [bulk, setBulk] = useState("");
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function readCard(file: File) {
-    const { card, portrait, ocrCard } = await prepareIdPhoto(file);
+    sourceRef.current = pendingSource.current || file;
+    const { card, portrait, ocrCard } = await prepareIdPhoto(file, { ocrSide: 1800, clarify: true });
     let text = "";
     let fetched: Record<string, string> = {};
     try {
@@ -39,10 +47,11 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
       nationality: fetched.nationality,
       dateOfBirth: fetched.dateOfBirth,
     });
+    const local = fieldsFromCardText(text);
     setF((x) => ({
       ...x,
-      name: x.name || fetched.name || "",
-      eid: x.eid || fetched.idOrVisaNo || formatEidLocal(text) || "",
+      name: local.name,
+      eid: local.id,
       phone: x.phone || fetched.mobileNumber || "",
     }));
   }
@@ -70,12 +79,32 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
       setMsg(`${f.name.trim()} added.`);
       setF({ ...f, name: "", eid: "", phone: "" });
       setCard(null);
+      setBackPreview("");
       onAdded();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function readBack(file: File) {
+    setErr("");
+    const image = await shrinkImage(file, 1400);
+    setBackPreview(image);
+    let employer = "";
+    try {
+      const text = await ocrEmiratesCard([await imageForRead(file)]);
+      if (text.trim()) {
+        const fetched = await api<{ employer?: string; company?: string }>("POST", `/api/training/${j.id}/id-fetch`, { ocrText: text });
+        employer = (fetched.employer || fetched.company || "").trim();
+      }
+    } catch {
+      /* coordinator can type the employer */
+    }
+    if (!employer) return setErr("Could not read the Employer line on the ID back. Type it in Company.");
+    setF((x) => ({ ...x, company: employer }));
+    setMsg(`Employer from the ID back: ${employer}`);
   }
 
   async function addMany() {
@@ -103,6 +132,31 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
     setErr(failed.map((x) => `${x.row.name}: ${x.why}`).join("\n"));
     setBulk(failed.map((x) => [x.row.name, x.row.eid, x.row.phone].filter(Boolean).join(", ")).join("\n"));
     if (added) onAdded();
+  }
+
+  async function cropFace() {
+    const file = sourceRef.current;
+    if (!file) return;
+    const face = await crop(file, "photo");
+    if (!face) return;
+    const photoDataUrl = await shrinkImage(face, 800);
+    setCard((current) => (current ? { ...current, photoDataUrl } : current));
+  }
+
+  async function fetchAgain() {
+    const file = sourceRef.current;
+    if (!file) return;
+    setErr("");
+    const cropped = await crop(file, "id");
+    if (!cropped) return;
+    setBusy(true);
+    try {
+      await readCard(cropped);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   const shared = (
@@ -150,8 +204,42 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
 
       {mode === "one" ? (
         <>
-          <p className="hint">Drop the Emirates ID card to fill the details, or type them.</p>
-          <IdDropZone current={card?.idCardDataUrl} onFile={readCard} />
+          <p className="hint">Drop the Emirates ID. Zoom in until the name and ID number are clear, then fetch the details. You can also type them.</p>
+          <IdDropZone current={card?.idCardDataUrl} onFile={readCard} onPicked={(file) => (pendingSource.current = file)} cropPurpose="id" />
+          {card?.photoDataUrl && (
+            <div className="id-face-row">
+              <img src={card.photoDataUrl} alt="Photo from the ID card" />
+              <div>
+                <p className="hint" style={{ margin: 0 }}>
+                  Photo from the card. Zoom in if the face is not clear, or zoom the card again and fetch the data.
+                </p>
+                <p style={{ margin: "8px 0 0", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" className="btn sec sm" onClick={() => cropFace().catch((e) => setErr((e as Error).message))}>
+                    Zoom and crop photo
+                  </button>
+                  <button type="button" className="btn ghost sm" disabled={busy} onClick={() => fetchAgain().catch((e) => setErr((e as Error).message))}>
+                    Zoom and fetch again
+                  </button>
+                </p>
+              </div>
+            </div>
+          )}
+          {cropDialog}
+          {perms.canIssueCerts() && (
+            <div style={{ marginTop: 10 }}>
+              <label>ID back side</label>
+              <p className="hint">Upload the back of the Emirates ID. The Employer on that side is what prints on the special certificate.</p>
+              <IdDropZone
+                current={backPreview}
+                onFile={readBack}
+                cropPurpose="back"
+                idle="Drag the ID back side here or click to upload"
+                replace="Drag a new ID back side here or click to replace"
+                busyText="Reading employer…"
+                alt="Emirates ID back"
+              />
+            </div>
+          )}
           <div className="grid">
             <div>
               <label>Name *</label>
