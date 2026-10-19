@@ -313,14 +313,26 @@ async function sendTrainingCardPdf(
   const textRight = photoX - 10;
   const textW = textRight - textLeft;
   const name = (c.name || "").toUpperCase();
-  const nameW = 270;
-  const nameLeft = (W - nameW) / 2;
+  const logoLeft = 256;
+  const centerW = 270;
+  const centerLeft = (W - centerW) / 2;
   doc.font("Helvetica-Bold");
   let nameSize = 22;
-  while (nameSize > 15 && doc.fontSize(nameSize).widthOfString(name) > nameW) nameSize -= 0.5;
-  const nameLines = doc.fontSize(nameSize).widthOfString(name) > nameW ? 2 : 1;
+  let nameW = centerW;
+  let nameLeft = centerLeft;
+  const textWidth = () => doc.fontSize(nameSize).widthOfString(name);
+  const centeredRight = centerLeft + (centerW + Math.min(textWidth(), centerW)) / 2;
+  if (textWidth() > centerW || centeredRight > logoLeft - 4) {
+    nameLeft = 72;
+    nameW = logoLeft - nameLeft - 4;
+    const longest = name.split(/\s+/).filter(Boolean).reduce(
+      (a, b) => (doc.fontSize(nameSize).widthOfString(a) >= doc.fontSize(nameSize).widthOfString(b) ? a : b),
+      name,
+    );
+    while (nameSize > 12 && doc.fontSize(nameSize).widthOfString(longest) > nameW) nameSize -= 0.5;
+  }
   const nameY = H * 0.19;
-  const nameHeight = nameLines === 1 ? nameSize + 4 : nameSize * 2 + 8;
+  const nameHeight = doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "center" }) + 2;
   doc.fillColor("#000000").font("Helvetica-Bold").fontSize(nameSize);
   const nameOpts = { width: nameW, align: "center" as const, lineGap: 1, height: nameHeight };
   doc.text(name, nameLeft, nameY, nameOpts);
@@ -329,7 +341,7 @@ async function sendTrainingCardPdf(
   doc.font("Helvetica-Bold");
   let tradeSize = 14;
   while (tradeSize > 10 && doc.fontSize(tradeSize).widthOfString(trade) > textW) tradeSize -= 0.5;
-  const nameBottom = nameY + (nameLines === 1 ? nameSize + 2 : nameSize * 2 + 6);
+  const nameBottom = nameY + nameHeight;
   const tradeY = Math.max(H * 0.35, nameBottom + 4);
   doc.fillColor(ink).font("Helvetica-Bold").fontSize(tradeSize)
     .text(trade, textLeft, tradeY, { width: textW, align: "center", height: tradeSize + 4 });
