@@ -15,9 +15,15 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
   const { perms } = useApp();
   const no = c.certificateNo;
   const fit = j.companyFit === "shrink" ? "shrink" : "same";
+  const specialFit = j.specialCompanyFit === "shrink" || j.specialCompanyFit === "same" ? j.specialCompanyFit : fit;
   async function setFit(next: "same" | "shrink") {
     if (next === fit) return;
     await api("PATCH", `/api/training/${j.id}`, { companyFit: next });
+    onChanged();
+  }
+  async function setSpecialFit(next: "same" | "shrink") {
+    if (next === specialFit) return;
+    await api("PATCH", `/api/training/${j.id}`, { specialCompanyFit: next });
     onChanged();
   }
   return (
@@ -44,9 +50,17 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
         Shrink
       </button>
       {perms.canIssueCerts() && (
-        <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, no)}>
-          Special design
-        </button>
+        <>
+          <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, no)}>
+            Special design
+          </button>
+          <button className={"btn sm " + (specialFit === "same" ? "dark" : "sec")} onClick={() => void setSpecialFit("same")}>
+            Same size
+          </button>
+          <button className={"btn sm " + (specialFit === "shrink" ? "dark" : "sec")} onClick={() => void setSpecialFit("shrink")}>
+            Shrink
+          </button>
+        </>
       )}
       <button className="btn sec sm" onClick={() => downloads.certificateLayout(j.id, c.id, no)}>
         Certificate design
@@ -80,7 +94,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
         {perms.canIssueCerts() && (
           <>
             {" "}
-            <b>Special design</b> is the Qannati-style Word file. It prints the employer from the ID back and the TR job number.
+            <b>Special design</b> is the Qannati-style Word file. It prints the employer from the ID back and the TR job number. The <b>Same size</b> and <b>Shrink</b> buttons beside it change only that file.
           </>
         )}
       </p>

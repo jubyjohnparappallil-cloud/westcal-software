@@ -42,8 +42,8 @@ function specialEmployer(job: TrainingJob, certificate: TrainingCertificate): st
   return pick || "";
 }
 
-/** Smaller QR, a little higher, to the right of the special certificate details. */
-const QR_DRAWING = `<w:tbl><w:tblPr><w:tblpPr w:leftFromText="0" w:rightFromText="0" w:vertAnchor="text" w:horzAnchor="page" w:tblpX="6600" w:tblpY="120"/><w:tblW w:w="1100" w:type="dxa"/><w:tblBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="1100"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="1100"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="1100" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="700000" cy="700000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="21" name="Verify QR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="21" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQr"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="700000" cy="700000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc></w:tr></w:tbl>`;
+/** Smaller QR in the gap, with its top on the Certificate No row. */
+const QR_DRAWING = `<w:tbl><w:tblPr><w:tblpPr w:leftFromText="0" w:rightFromText="0" w:vertAnchor="text" w:horzAnchor="page" w:tblpX="6600" w:tblpY="-160"/><w:tblW w:w="1100" w:type="dxa"/><w:tblBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="1100"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="1100"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="1100" w:type="dxa"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="700000" cy="700000"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="21" name="Verify QR"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="21" name="qr.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdQr"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="700000" cy="700000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc></w:tr></w:tbl>`;
 
 export async function buildQannatiCertificateDocx(
   job: TrainingJob,
@@ -51,10 +51,11 @@ export async function buildQannatiCertificateDocx(
   verifyUrl?: string,
 ): Promise<Buffer> {
   const s = certificateSlots(certificate, job);
+  const employer = specialEmployer(job, certificate).toUpperCase();
   const values: Record<string, string> = {
     "{{NAME}}": xmlEscape(s.name.toUpperCase()),
     "{{EID}}": xmlEscape(s.eid),
-    "{{COMPANY}}": xmlEscape(specialEmployer(job, certificate).toUpperCase()),
+    "{{COMPANY}}": xmlEscape(employer),
     "{{COURSE}}": xmlEscape(s.course.toUpperCase()),
     "{{CERTNO}}": xmlEscape(s.certificateNo),
     "{{JOBNO}}": xmlEscape(specialJobNo(job)),
@@ -64,7 +65,8 @@ export async function buildQannatiCertificateDocx(
   const file = zip.file("word/document.xml");
   if (!file) throw new Error("special certificate template is missing");
   let xml = await file.async("string");
-  xml = shrinkCompanyParagraph(xml, companyNameHalfPoints(s.company, 36, s.companyFit, s.companyScale));
+  const specialFit = job.specialCompanyFit === "shrink" || job.specialCompanyFit === "same" ? job.specialCompanyFit : s.companyFit;
+  xml = shrinkCompanyParagraph(xml, companyNameHalfPoints(employer, 36, specialFit, s.companyScale));
   if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "Passport No");
   for (const [token, value] of Object.entries(values)) xml = xml.replaceAll(token, value);
   if (verifyUrl) {
