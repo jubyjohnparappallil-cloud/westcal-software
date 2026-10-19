@@ -794,9 +794,9 @@ export class TrainingService {
   createJob(input: CreateTrainingInput): TrainingJob {
     const course = joinCourseNames(input.course, input.courses);
     const companies = joinCompanyNames(input.customerName, input.companies);
-    if (!companies.length) throw new ValidationError("at least one company is required", "customerName");
-    if (!course && !String(input.mappingType ?? "").trim()) throw new ValidationError("scope/course is required", "course");
     const isMapping = (input.serviceType ?? "Training") === "Mapping";
+    if (!isMapping && !companies.length) throw new ValidationError("at least one company is required", "customerName");
+    if (!isMapping && !course && !String(input.mappingType ?? "").trim()) throw new ValidationError("scope/course is required", "course");
     let fromDate = input.trainingDate;
     let toDate = input.trainingDateTo;
     if (isMapping && !String(fromDate ?? "").trim()) {
@@ -816,13 +816,8 @@ export class TrainingService {
     let mappingType = String(input.mappingType ?? "").trim();
     let mappingRange = String(input.mappingRange ?? "").trim();
     if (serviceType === "Mapping") {
-      if (!MAPPING_TYPES.includes(mappingType as MappingType)) {
+      if (mappingType && !MAPPING_TYPES.includes(mappingType as MappingType)) {
         throw new ValidationError("choose a mapping type", "mappingType");
-      }
-      const allowed = MAPPING_RANGES[mappingType as MappingType];
-      if (!mappingRange) {
-        if (mappingType === "Vehicle mapping") throw new ValidationError("enter the temperature range", "mappingRange");
-        mappingRange = allowed[0];
       }
     } else {
       mappingType = "";
@@ -839,9 +834,9 @@ export class TrainingService {
       serviceType,
       location,
       course: scope,
-      customerName: companies[0],
+      customerName: companies[0] || "",
       companies,
-      certificateUnder: String(input.certificateUnder ?? input.certifiedBy ?? "").trim() || companies[0],
+      certificateUnder: String(input.certificateUnder ?? input.certifiedBy ?? "").trim() || companies[0] || "",
       trainingDate,
       trainingDateTo,
       trainingTime: input.trainingTime,
@@ -1068,8 +1063,8 @@ export class TrainingService {
     }
     if (patch.customerName !== undefined || patch.companies !== undefined) {
       const companies = joinCompanyNames(patch.customerName ?? job.customerName, patch.companies ?? job.companies);
-      if (!companies.length) throw new ValidationError("at least one company is required", "customerName");
-      job.customerName = companies[0];
+      if (!companies.length && job.serviceType !== "Mapping") throw new ValidationError("at least one company is required", "customerName");
+      job.customerName = companies[0] || "";
       job.companies = companies;
     }
     if (patch.trainingDate !== undefined || patch.trainingDateTo !== undefined) {

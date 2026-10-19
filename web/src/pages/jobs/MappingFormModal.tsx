@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { api } from "../../api";
 import { useApp, usePageData } from "../../app-context";
 import { Modal } from "../../components/Modal";
@@ -13,7 +13,9 @@ import {
   sheetsFromJob,
   sheetsToJob,
   splitSeason,
+  nextKey,
   type Protocol,
+  type Sheets,
 } from "../../components/mapping/mappingData";
 import { LayoutUpload, MappingRanges, ProtocolFields, ProtocolPreview, ProtocolSheetsEditor } from "../../components/mapping/ProtocolEditor";
 import type { Assignee } from "../../lib/roles";
@@ -23,6 +25,88 @@ interface MappingLoaded {
   assignees: Assignee[];
   nextOrder: string;
   editing: Job | null;
+}
+
+const MAPPING_DRAFT_KEY = "westcal.mappingJobDraft";
+
+type MappingFields = {
+  customer: string;
+  addr: string;
+  location: string;
+  time: string;
+  order: string;
+  sales: string;
+  handed: string;
+  contact: string;
+  required: string;
+  assignee: string;
+  designation: string;
+  mapType: string;
+  asset: string;
+  tempRange: string;
+  humRange: string;
+  season: string;
+  year: string;
+};
+
+function blankMappingFields(order: string): MappingFields {
+  return {
+    customer: "",
+    addr: "",
+    location: "",
+    time: "",
+    order,
+    sales: "",
+    handed: "",
+    contact: "",
+    required: "",
+    assignee: "",
+    designation: "",
+    mapType: "",
+    asset: "",
+    tempRange: "",
+    humRange: "",
+    season: "",
+    year: "",
+  };
+}
+
+function readMappingDraft(): { f: Partial<MappingFields>; p: Partial<Protocol>; sheets: Sheets } | null {
+  try {
+    const raw = localStorage.getItem(MAPPING_DRAFT_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as { f?: Partial<MappingFields>; p?: Partial<Protocol>; sheets?: Sheets };
+    if (!data?.f || !data.p || !data.sheets?.loggers || !data.sheets.temp || !data.sheets.hum || !data.sheets.chg) return null;
+    return { f: data.f, p: data.p, sheets: data.sheets };
+  } catch {
+    return null;
+  }
+}
+
+function withFreshKeys(sheets: Sheets): Sheets {
+  return {
+    layout: { touched: !!sheets.layout?.touched, value: String(sheets.layout?.value || "") },
+    loggers: sheets.loggers.map((row) => ({ ...row, key: nextKey() })),
+    temp: sheets.temp.map((row) => ({ ...row, key: nextKey() })),
+    hum: sheets.hum.map((row) => ({ ...row, key: nextKey() })),
+    chg: sheets.chg.map((row) => ({ ...row, key: nextKey() })),
+  };
+}
+
+function writeMappingDraft(f: MappingFields, p: Protocol, sheets: Sheets) {
+  const payload = { f, p, sheets };
+  try {
+    localStorage.setItem(MAPPING_DRAFT_KEY, JSON.stringify(payload));
+  } catch {
+    try {
+      localStorage.setItem(
+        MAPPING_DRAFT_KEY,
+        JSON.stringify({ f, p, sheets: { ...sheets, layout: { touched: false, value: "" } } }),
+      );
+    } catch {
+      /* The browser storage is full. The form still works for this visit. */
+    }
+  }
 }
 
 export function MappingFormModal({ editId, onClose, onSaved }: { editId?: string; onClose: () => void; onSaved: () => void }) {
@@ -60,27 +144,42 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
   const allowAddRows = perms.canAddMappingRows();
   const job = loaded.editing;
   const season = splitSeason(job?.seasonYear || "");
-  const [f, setF] = useState({
-    customer: job?.customerName || "",
-    addr: job?.address || "",
-    location: job?.location || "",
-    time: job?.trainingTime || "",
-    order: job ? job.jobOrderNo || "" : loaded.nextOrder,
-    sales: job?.salesPerson || "",
-    handed: job?.handedOverTo || "",
-    contact: job?.contactNameNumber || "",
-    required: job?.requiredDateForService || "",
-    assignee: job?.assigneeId || "",
-    designation: job?.engineerDesignation || "",
-    mapType: job?.mappingType || "",
-    asset: job?.assetName || "",
-    tempRange: normalizeTempRange(job?.mappingRange || ""),
-    humRange: job?.maxHumRange || "",
-    season: season.season,
-    year: season.year,
+  const draft = editId ? null : readMappingDraft();
+  const [f, setF] = useState<MappingFields>(() => {
+    const saved = blankMappingFields(job ? job.jobOrderNo || "" : loaded.nextOrder);
+    if (!editId) {
+      return {
+        ...saved,
+        ...draft?.f,
+        order: loaded.nextOrder,
+      };
+    }
+    if (!job) return saved;
+    return {
+      ...saved,
+      customer: job.customerName || "",
+      addr: job.address || "",
+      location: job.location || "",
+      time: job.trainingTime || "",
+      sales: job.salesPerson || "",
+      handed: job.handedOverTo || "",
+      contact: job.contactNameNumber || "",
+      required: job.requiredDateForService || "",
+      assignee: job.assigneeId || "",
+      designation: job.engineerDesignation || "",
+      mapType: job.mappingType || "",
+      asset: job.assetName || "",
+      tempRange: normalizeTempRange(job.mappingRange || ""),
+      humRange: job.maxHumRange || "",
+      season: season.season,
+      year: season.year,
+    };
   });
-  const [p, setP] = useState<Protocol>(() => (job ? protocolFromJob(job) : emptyProtocol()));
-  const [sheets, setSheets] = useState(() => sheetsFromJob(job));
+  const [p, setP] = useState<Protocol>(() => {
+    if (!editId) return { ...emptyProtocol(), ...draft?.p };
+    return job ? protocolFromJob(job) : emptyProtocol();
+  });
+  const [sheets, setSheets] = useState(() => (editId || !draft?.sheets ? sheetsFromJob(job) : withFreshKeys(draft.sheets)));
   const [assignees, setAssignees] = useState(loaded.assignees);
   const [newEngineer, setNewEngineer] = useState("");
   const [engineerMsg, setEngineerMsg] = useState({ text: "", ok: false });
@@ -88,6 +187,16 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const bind = (k: keyof typeof f) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  useEffect(() => {
+    if (editId) return;
+    writeMappingDraft(f, p, sheets);
+  }, [editId, f, p, sheets]);
+  function clearDraft() {
+    localStorage.removeItem(MAPPING_DRAFT_KEY);
+    setF(blankMappingFields(loaded.nextOrder));
+    setP(emptyProtocol());
+    setSheets(sheetsFromJob(null));
+  }
   const setProtocol = (patch: Partial<Protocol>) => setP((x) => ({ ...x, ...patch }));
   const engineers = assignees.filter((a) => a.roleName === "Site Engineer");
   const locations = f.location && !MAPPING_LOCATIONS.includes(f.location) ? [...MAPPING_LOCATIONS, f.location] : MAPPING_LOCATIONS;
@@ -117,21 +226,6 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
     setErr("");
     const customer = f.customer.trim();
     const scope = [f.mapType, f.tempRange].filter(Boolean).join(" · ");
-    if (!customer) return setErr("Customer name is required.");
-    if (!f.addr.trim())
-      return setErr(editId ? "Site address is required." : "Site address is required so the trainer/engineer can find the location.");
-    if (!f.time) return setErr("Start time is required.");
-    if (!f.contact.trim()) return setErr("Contact name / number is required.");
-    if (!f.location) return setErr("Choose the location.");
-    if (!f.mapType) return setErr("Choose the type of mapping.");
-    if (!f.tempRange) return setErr("Choose the temperature range, or use Add.");
-    if (!f.humRange) return setErr("Choose the humidity range, or use Add.");
-    if (!f.season) return setErr("Choose the season, or use Add.");
-    if (!f.year.trim()) return setErr("Enter the year for the season.");
-    if (!f.asset.trim()) return setErr("Enter the asset name.");
-    if (!f.designation.trim()) return setErr("Enter the designation.");
-    if (!scope) return setErr("Please type the scope of work.");
-    if (!editId && !f.assignee) return setErr("Assign a site engineer.");
     const body = {
       location: f.location,
       course: scope,
@@ -161,6 +255,7 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
       if (editId) await api("PATCH", `/api/training/${editId}`, body);
       else id = (await api<Job>("POST", "/api/training", { serviceType: "Mapping", ...body })).id;
       if (f.assignee) await api("POST", `/api/training/${id}/assign`, { assigneeId: f.assignee });
+      if (!editId) localStorage.removeItem(MAPPING_DRAFT_KEY);
       onSaved();
     } catch (e) {
       setErr((e as Error).message);
@@ -170,11 +265,19 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
 
   return (
     <div className="job-form">
+      {!editId && (
+        <p className="hint">
+          What you type is kept as a draft. Closing this form will not lose it.{" "}
+          <button type="button" className="btn ghost sm" onClick={clearDraft}>
+            Clear draft
+          </button>
+        </p>
+      )}
       <div className="job-block">
         <h4>1 · Customer</h4>
         <div className="job-row">
           <div className="span-2">
-            <label>Customer name *</label>
+            <label>Customer name</label>
             <input value={f.customer} placeholder="Company name" onChange={bind("customer")} />
           </div>
           <div className="span-2">
@@ -187,11 +290,11 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
         <h4>2 · When and where</h4>
         <div className="job-row">
           <div className="span-2">
-            <label>Site address *</label>
+            <label>Site address</label>
             <input value={f.addr} placeholder="Building, area, city" onChange={bind("addr")} />
           </div>
           <div>
-            <label>Location *</label>
+            <label>Location</label>
             <select value={f.location} onChange={bind("location")}>
               <option value="">Choose location</option>
               {locations.map((l) => (
@@ -200,7 +303,7 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
             </select>
           </div>
           <div>
-            <label>Start time *</label>
+            <label>Start time</label>
             <input type="time" value={f.time} onChange={bind("time")} />
           </div>
           <div>
@@ -229,7 +332,7 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
             <input value={f.handed} placeholder="Name" onChange={bind("handed")} />
           </div>
           <div>
-            <label>Contact *</label>
+            <label>Contact</label>
             <input value={f.contact} placeholder="Name and mobile" onChange={bind("contact")} />
           </div>
           <div>
@@ -242,16 +345,16 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
         <h4>Site engineer</h4>
         <div className="job-row">
           <div className="span-2">
-            <label>Westcal engineer name *</label>
+            <label>Westcal engineer name</label>
             <select value={f.assignee} onChange={bind("assignee")}>
-              <option value="">Choose site engineer *</option>
+              <option value="">Choose site engineer</option>
               {engineers.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.displayName}
                 </option>
               ))}
             </select>
-            <label style={{ marginTop: 14 }}>Designation *</label>
+            <label style={{ marginTop: 14 }}>Designation</label>
             <input value={f.designation} placeholder="e.g. Site Engineer" onChange={bind("designation")} />
             <label style={{ marginTop: 14 }}>Add a new site engineer</label>
             <div className="add-row">
@@ -277,7 +380,7 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
       <div className="job-block">
         <h4>4 · Type of mapping</h4>
         <div>
-          <label>Type of mapping *</label>
+          <label>Type of mapping</label>
           <select value={f.mapType} onChange={bind("mapType")}>
             <option value="">Choose mapping type</option>
             {MAPPING_TYPES.map((t) => (
@@ -287,7 +390,7 @@ function MappingForm({ editId, loaded, onSaved }: { editId?: string; loaded: Map
         </div>
         <div className="job-row" style={{ marginTop: 14 }}>
           <div>
-            <label>Asset name *</label>
+            <label>Asset name</label>
             <input value={f.asset} placeholder="e.g. Warehouse cool room" onChange={bind("asset")} />
           </div>
           <div>

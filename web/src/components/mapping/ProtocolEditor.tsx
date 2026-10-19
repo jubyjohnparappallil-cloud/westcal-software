@@ -452,7 +452,7 @@ export function MappingRanges(props: RangeValues & { onChange: (patch: Partial<R
     <>
       <ListSelect
         list={TEMP_RANGES}
-        label="Temperature range *"
+        label="Temperature range"
         emptyLabel="Choose temperature range"
         addPlaceholder="e.g. -15°C to -25°C"
         value={props.tempRange}
@@ -460,7 +460,7 @@ export function MappingRanges(props: RangeValues & { onChange: (patch: Partial<R
       />
       <ListSelect
         list={HUM_RANGES}
-        label="Humidity range to be mapped *"
+        label="Humidity range to be mapped"
         emptyLabel="Choose humidity range"
         addPlaceholder="e.g. Max 55%"
         value={props.humRange}
