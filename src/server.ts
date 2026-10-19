@@ -302,7 +302,8 @@ async function sendTrainingCardPdf(
   }
 
   const navy = "#1e4b8f";
-  const ink = "#111111";
+  const ink = "#243044";
+  const labelInk = "#5a6874";
   try { doc.image(logo, 262, 4, { fit: [172, 62], align: "right" }); } catch { /* logo optional */ }
 
   const photoW = 68;
@@ -313,30 +314,19 @@ async function sendTrainingCardPdf(
   const textRight = photoX - 10;
   const textW = textRight - textLeft;
   const name = (c.name || "").toUpperCase();
-  const logoLeft = 256;
-  const centerW = 270;
-  const centerLeft = (W - centerW) / 2;
   doc.font("Helvetica-Bold");
-  let nameSize = 22;
-  let nameW = centerW;
-  let nameLeft = centerLeft;
-  const textWidth = () => doc.fontSize(nameSize).widthOfString(name);
-  const centeredRight = centerLeft + (centerW + Math.min(textWidth(), centerW)) / 2;
-  if (textWidth() > centerW || centeredRight > logoLeft - 4) {
-    nameLeft = 72;
-    nameW = logoLeft - nameLeft - 4;
-    const longest = name.split(/\s+/).filter(Boolean).reduce(
-      (a, b) => (doc.fontSize(nameSize).widthOfString(a) >= doc.fontSize(nameSize).widthOfString(b) ? a : b),
-      name,
-    );
-    while (nameSize > 12 && doc.fontSize(nameSize).widthOfString(longest) > nameW) nameSize -= 0.5;
-  }
-  const nameY = H * 0.19;
+  let nameSize = 11;
+  const nameW = 220;
+  const nameLeft = (W - nameW) / 2;
+  const longest = name.split(/\s+/).filter(Boolean).reduce(
+    (a, b) => (doc.fontSize(nameSize).widthOfString(a) >= doc.fontSize(nameSize).widthOfString(b) ? a : b),
+    name,
+  );
+  while (nameSize > 8 && doc.fontSize(nameSize).widthOfString(longest) > nameW) nameSize -= 0.25;
+  const nameY = 84;
   const nameHeight = doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "center" }) + 2;
-  doc.fillColor("#000000").font("Helvetica-Bold").fontSize(nameSize);
-  const nameOpts = { width: nameW, align: "center" as const, lineGap: 1, height: nameHeight };
-  doc.text(name, nameLeft, nameY, nameOpts);
-  doc.text(name, nameLeft + 0.45, nameY, nameOpts);
+  doc.fillColor(ink).font("Helvetica-Bold").fontSize(nameSize);
+  doc.text(name, nameLeft, nameY, { width: nameW, align: "center", lineGap: 1, height: nameHeight });
   const trade = (c.course || "").trim();
   doc.font("Helvetica-Bold");
   let tradeSize = 14;
@@ -377,10 +367,10 @@ async function sendTrainingCardPdf(
       if (doc.widthOfString(value) > rowValueW) companyLines = 2;
     }
     const rowH = companyLines === 2 ? doc.font("Helvetica-Bold").fontSize(size).heightOfString(value, { width: rowValueW }) + 1 : 14;
-    doc.font("Helvetica-Bold").fontSize(labelSize).fillColor(ink)
+    doc.font("Helvetica").fontSize(labelSize).fillColor(labelInk)
       .text(label, textLeft, y, { width: rowLabelW, height: 14, lineBreak: false });
     doc.text(":", textLeft + rowLabelW, y, { width: colonW, height: 14, lineBreak: false });
-    doc.font("Helvetica-Bold").fontSize(size).text(value, rowValueX, y + (companyLines === 1 ? (labelSize - size) * 0.15 : 0), {
+    doc.font("Helvetica-Bold").fontSize(size).fillColor(ink).text(value, rowValueX, y + (companyLines === 1 ? (labelSize - size) * 0.15 : 0), {
       width: rowValueW,
       height: rowH,
       lineBreak: companyLines === 2,
@@ -426,7 +416,7 @@ async function sendTrainingCardPdf(
   const lineH = addrSize + 1.7;
   const addressY = photoY + photoH + 5;
   doc.rect(addressX - 4, photoY + photoH - 2, addressRight - addressX + 10, H - (photoY + photoH) + 2).fill("#f7fbfd");
-  doc.fillColor("#000000").font("Helvetica-Bold").fontSize(addrSize);
+  doc.fillColor("#3a4654").font("Helvetica-Bold").fontSize(addrSize);
   const addrOpts = { width: addressW, align: "left" as const, height: lineH, lineBreak: false };
   addressLines.forEach((line, i) => {
     const lineY = addressY + i * lineH;
