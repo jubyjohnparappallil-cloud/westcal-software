@@ -11,9 +11,15 @@ import { downloads } from "../../lib/downloads";
 import { coursesForPerson, jobCourses } from "../../lib/jobs";
 import type { Certificate, Job } from "../../types";
 
-function CertDownloads({ j, c, compact }: { j: Job; c: Certificate; compact?: boolean }) {
+function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; compact?: boolean; onChanged: () => void }) {
   const { perms } = useApp();
   const no = c.certificateNo;
+  const fit = j.companyFit === "shrink" ? "shrink" : "same";
+  async function setFit(next: "same" | "shrink") {
+    if (next === fit) return;
+    await api("PATCH", `/api/training/${j.id}`, { companyFit: next });
+    onChanged();
+  }
   return (
     <>
       <button className="btn dark sm" onClick={() => downloads.certificate(j.id, c.id, no)}>
@@ -30,6 +36,12 @@ function CertDownloads({ j, c, compact }: { j: Job; c: Certificate; compact?: bo
       </button>
       <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, no)}>
         Old design data
+      </button>
+      <button className={"btn sm " + (fit === "same" ? "dark" : "sec")} onClick={() => void setFit("same")}>
+        Same size
+      </button>
+      <button className={"btn sm " + (fit === "shrink" ? "dark" : "sec")} onClick={() => void setFit("shrink")}>
+        Shrink
       </button>
       {perms.canIssueCerts() && (
         <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, no)}>
@@ -64,7 +76,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
   return (
     <>
       <p className="hint">
-        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate.
+        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate. <b>Same size</b> keeps a long company name as large as the trainee name. <b>Shrink</b> makes that long name smaller. Choose one, then download again.
         {perms.canIssueCerts() && (
           <>
             {" "}
@@ -124,7 +136,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
                         <button className="btn sec sm" onClick={() => setViewing(c)}>
                           Preview
                         </button>
-                        <CertDownloads j={j} c={c} compact />
+                        <CertDownloads j={j} c={c} compact onChanged={onChanged} />
                       </div>
                     </td>
                   </tr>
@@ -172,7 +184,6 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
     expiresOn: c.expiresOn || "",
   });
   const [photo, setPhoto] = useState(attendee?.photoDataUrl || "");
-  const [companyFit, setCompanyFit] = useState(j.companyFit === "shrink" ? "shrink" : "same");
   const [err, setErr] = useState("");
   const { crop, dialog: cropDialog } = usePhotoCrop();
   const ref = c.verificationRef ? encodeURIComponent(c.verificationRef) : "";
@@ -204,7 +215,6 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
       const body = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, v.trim()]));
       await api("PATCH", `/api/training/${j.id}`, {
         certificateUnder: certifiedTo.trim(),
-        companyFit,
       });
       if (c.attendeeId) {
         await api("PATCH", `/api/training/${j.id}/attendees/${c.attendeeId}`, {
@@ -280,14 +290,6 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
           <div>
             <label>Certified to</label>
             <input {...field("certifiedTo")} />
-          </div>
-          <div className="span-2">
-            <label>Long company name</label>
-            <select value={companyFit} onChange={(e) => setCompanyFit(e.target.value === "shrink" ? "shrink" : "same")}>
-              <option value="same">Same size</option>
-              <option value="shrink">Shrink</option>
-            </select>
-            <p className="hint">Same size keeps the company name as large as the trainee name, on two lines if needed. Shrink makes a long name smaller. This choice is used for every certificate on the job.</p>
           </div>
           <div className="span-2">
             <label>Training course</label>
