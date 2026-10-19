@@ -310,6 +310,8 @@ export interface TrainingJob {
   certificateDesign?: string;
   /** Extra shrink for a long employer name. 1 keeps the automatic fit. */
   companyScale?: number;
+  /** Long company name: same size as the trainee name, or a smaller fitted size. */
+  companyFit?: "same" | "shrink";
   /** Public join link token sent to trainees (no login). */
   traineeInviteToken?: string;
   /** Optional supporting files such as invoice, quotation, LPO or report. */
@@ -538,6 +540,7 @@ export interface CreateTrainingInput {
   lineItems?: JobLineItem[];
   certificateDesign?: string;
   companyScale?: number;
+  companyFit?: "same" | "shrink";
 }
 
 /** A notification for the mobile/side app (e.g. "job assigned to you"). */
@@ -1051,6 +1054,7 @@ export class TrainingService {
         : job.layoutImageDataUrl,
       certificateDesign: patch.certificateDesign ?? job.certificateDesign,
       companyScale: patch.companyScale !== undefined ? clampStoredCompanyScale(patch.companyScale) : job.companyScale,
+      companyFit: patch.companyFit !== undefined ? (patch.companyFit === "shrink" ? "shrink" : "same") : job.companyFit,
       lineItems: patch.lineItems ?? job.lineItems,
     });
     if (job.serviceType === "Mapping" && (patch.mappingType !== undefined || patch.mappingRange !== undefined)) {

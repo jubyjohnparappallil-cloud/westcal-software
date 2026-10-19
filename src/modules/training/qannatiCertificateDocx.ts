@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ServerResponse } from "node:http";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { certificateSlots, companyWordHalfPoints, shrinkCompanyParagraph } from "./certificateTemplate.js";
+import { certificateSlots, companyNameHalfPoints, shrinkCompanyParagraph } from "./certificateTemplate.js";
 import { printedTrNo, type TrainingCertificate, type TrainingJob } from "./training.js";
 
 const TEMPLATE = join(dirname(fileURLToPath(import.meta.url)), "templates", "qannati-certificate.docx");
@@ -64,7 +64,7 @@ export async function buildQannatiCertificateDocx(
   const file = zip.file("word/document.xml");
   if (!file) throw new Error("special certificate template is missing");
   let xml = await file.async("string");
-  xml = shrinkCompanyParagraph(xml, companyWordHalfPoints(s.company, 28, s.companyScale));
+  xml = shrinkCompanyParagraph(xml, companyNameHalfPoints(s.company, 36, s.companyFit, s.companyScale));
   if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "Passport No");
   for (const [token, value] of Object.entries(values)) xml = xml.replaceAll(token, value);
   if (verifyUrl) {

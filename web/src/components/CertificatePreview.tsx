@@ -1,7 +1,8 @@
 import { certDate, printedTrNo } from "../lib/jobs";
 import type { Certificate, Job } from "../types";
 
-function employerTextSize(text: string, scale: unknown): string {
+function employerTextSize(text: string, scale: unknown, fit: unknown): string {
+  if (fit !== "shrink") return "1em";
   const n = Number(scale);
   const safe = Number.isFinite(n) ? Math.min(1, Math.max(0.55, n)) : 1;
   const len = text.trim().length;
@@ -15,7 +16,7 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
   const photo = attendee && (attendee.photoDataUrl || attendee.extraPhotoDataUrl);
   const design = j.certificateDesign || "achievement";
   const employer = j.certificateUnder || c.company || j.customerName || "-";
-  const employerFont = employerTextSize(employer, j.companyScale);
+  const employerFont = employerTextSize(employer, j.companyScale, j.companyFit);
   return (
     <div className={`west-cert design-${design}`}>
       {photo && (

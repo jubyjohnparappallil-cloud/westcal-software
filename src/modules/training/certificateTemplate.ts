@@ -113,11 +113,13 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
     qrDataUrl: c.qrDataUrl || "",
     design: "achievement",
     companyScale: clampCompanyScale(job.companyScale),
+    companyFit: job.companyFit === "shrink" ? "shrink" : "same",
   };
 }
 
 /** 1 keeps the automatic fit. Smaller values shrink a long employer name further. */
-function employerSize(text: string, scale: number): string {
+function employerSize(text: string, scale: number, fit: string): string {
+  if (fit !== "shrink") return "1em";
   const len = text.trim().length;
   const base = len > 52 ? 0.78 : len > 40 ? 0.88 : len > 28 ? 0.95 : 1;
   return `${(base * clampCompanyScale(scale)).toFixed(2)}em`;
@@ -129,11 +131,12 @@ export function clampCompanyScale(value: unknown): number {
   return Math.min(1, Math.max(0.55, n));
 }
 
-/** Word company line, in half-points, sized so it stays clear of the border and the QR. */
-export function companyWordHalfPoints(text: string, baseHalfPoints: number, scale: unknown): number {
+/** Same size matches the trainee name. Shrink makes a long company name smaller. */
+export function companyNameHalfPoints(text: string, nameHalfPoints: number, fit: unknown, scale: unknown): number {
+  const same = Math.max(16, Math.round(nameHalfPoints * clampCompanyScale(scale)));
+  if (fit !== "shrink") return same;
   const len = Math.max(1, text.trim().length);
-  const fitted = len <= 34 ? baseHalfPoints : Math.max(20, Math.round((baseHalfPoints * 34) / len));
-  return Math.max(16, Math.round(fitted * clampCompanyScale(scale)));
+  return len <= 34 ? same : Math.max(20, Math.round((same * 34) / len));
 }
 
 export function shrinkCompanyParagraph(xml: string, halfPoints: number): string {
@@ -185,7 +188,9 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
   const company = s.company.toUpperCase();
   let companySize = 13 * s.companyScale;
   doc.font("Times-Bold").fillColor(navy);
-  while (companySize > 8 && doc.fontSize(companySize).widthOfString(company) > w) companySize -= 0.5;
+  if (s.companyFit === "shrink") {
+    while (companySize > 8 && doc.fontSize(companySize).widthOfString(company) > w) companySize -= 0.5;
+  }
   doc.font("Times-Bold").fontSize(companySize)
     .text(company, x, y, { width: w, align: "center" });
   y = doc.y + 8;
@@ -288,7 +293,7 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
   <div class="cert-course">${esc(s.course)}</div>
   <div class="meta-col meta-left">
     <div><span>${s.idDocument === "passport" ? "Passport No" : "EID Number"}</span> ${esc(s.eid || "-")}</div>
-    <div><span>Employed by</span> <b class="employer" style="font-size:${employerSize(company, s.companyScale)}">${esc(company)}</b></div>
+    <div><span>Employed by</span> <b class="employer" style="font-size:${employerSize(company, s.companyScale, s.companyFit)}">${esc(company)}</b></div>
     <div><span>Training Date</span> ${esc(formatCertDate(s.trainingDate))}</div>
   </div>
   <div class="meta-col meta-right">

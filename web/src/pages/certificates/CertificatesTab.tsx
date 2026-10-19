@@ -172,7 +172,7 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
     expiresOn: c.expiresOn || "",
   });
   const [photo, setPhoto] = useState(attendee?.photoDataUrl || "");
-  const [companyScale, setCompanyScale] = useState(j.companyScale ? String(j.companyScale) : "1");
+  const [companyFit, setCompanyFit] = useState(j.companyFit === "shrink" ? "shrink" : "same");
   const [err, setErr] = useState("");
   const { crop, dialog: cropDialog } = usePhotoCrop();
   const ref = c.verificationRef ? encodeURIComponent(c.verificationRef) : "";
@@ -204,7 +204,7 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
       const body = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, v.trim()]));
       await api("PATCH", `/api/training/${j.id}`, {
         certificateUnder: certifiedTo.trim(),
-        companyScale: Number(companyScale),
+        companyFit,
       });
       if (c.attendeeId) {
         await api("PATCH", `/api/training/${j.id}/attendees/${c.attendeeId}`, {
@@ -282,14 +282,12 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
             <input {...field("certifiedTo")} />
           </div>
           <div className="span-2">
-            <label>Company name size</label>
-            <select value={companyScale} onChange={(e) => setCompanyScale(e.target.value)}>
-              <option value="1">Auto fit</option>
-              <option value="0.85">Smaller</option>
-              <option value="0.7">Small</option>
-              <option value="0.55">Smallest</option>
+            <label>Long company name</label>
+            <select value={companyFit} onChange={(e) => setCompanyFit(e.target.value === "shrink" ? "shrink" : "same")}>
+              <option value="same">Same size</option>
+              <option value="shrink">Shrink</option>
             </select>
-            <p className="hint">A long name shrinks so it stays off the border and the QR. Choose a smaller size if it still overlaps. This size is used for every certificate on the job.</p>
+            <p className="hint">Same size keeps the company name as large as the trainee name, on two lines if needed. Shrink makes a long name smaller. This choice is used for every certificate on the job.</p>
           </div>
           <div className="span-2">
             <label>Training course</label>
