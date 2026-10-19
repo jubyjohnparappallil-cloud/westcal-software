@@ -16,6 +16,7 @@ export interface Attendee {
   company?: string;
   mobileNumber?: string;
   idOrVisaNo?: string;
+  idDocument?: "eid" | "passport";
   course?: string;
   dob?: string;
   nationality?: string;
@@ -35,6 +36,7 @@ export interface Certificate {
   company?: string;
   course?: string;
   idOrVisaNo?: string;
+  idDocument?: "eid" | "passport";
   trainingDate?: string;
   expiresOn?: string;
   verificationRef?: string;

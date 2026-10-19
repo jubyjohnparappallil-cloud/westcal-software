@@ -3,6 +3,7 @@ import type { Job } from "../types";
 import { fapi } from "./api";
 import { useField } from "./FieldApp";
 import { dateFromCardText, employerFromCardText, enhanceCard, fieldsFromCardText, nationalityFromCardText, ocrEmiratesCard, ocrSelection, shrinkImage } from "./ocr";
+import { IdKindChoice } from "../components/IdKindChoice";
 import { IdWorkbench } from "../components/IdWorkbench";
 import { useDropImage } from "./useDropImage";
 
@@ -465,6 +466,7 @@ function TraineeFields(props: {
   const [v, setV] = useState({
     name: "",
     id: "",
+    idKind: "eid" as "eid" | "passport",
     dob: "",
     trainDate: job.trainingDate || "",
     certified: (job.certificateUnder || job.customerName || "").trim(),
@@ -482,6 +484,7 @@ function TraineeFields(props: {
         ...prev,
         name: next.name ?? prev.name,
         id: next.idOrVisaNo ?? prev.id,
+        idKind: next.idOrVisaNo ? "eid" : prev.idKind,
         dob: next.dateOfBirth || prev.dob,
         nat: next.nationality || prev.nat,
         mob: next.mobileNumber || prev.mob,
@@ -564,6 +567,7 @@ function TraineeFields(props: {
         name: v.name,
         company: v.company,
         idOrVisaNo: v.id.trim(),
+        idDocument: v.idKind,
         nationality: v.nat,
         mobileNumber: mob,
         dateOfBirth: v.dob || undefined,
@@ -615,11 +619,13 @@ function TraineeFields(props: {
         onFocus={(e) => e.currentTarget.removeAttribute("readonly")}
         onChange={set("name")}
       />
-      <label className="fl">Emirates ID / Visa no</label>
+      <IdKindChoice kind={v.idKind} onChange={(idKind) => setV({ ...v, idKind })} />
+      <label className="fl">{v.idKind === "passport" ? "Passport No" : "Emirates ID / Visa no"}</label>
       <input
         name="wc-attendee-eid"
         value={v.id}
         autoComplete="off"
+        placeholder={v.idKind === "passport" ? "Passport number" : "784-...."}
         readOnly
         onFocus={(e) => e.currentTarget.removeAttribute("readonly")}
         onChange={set("id")}

@@ -5,6 +5,7 @@ import { usePhotoCrop } from "./PhotoCropper";
 import { fieldsFromCardText, imageForRead, ocrEmiratesCard, prepareIdPhoto, shrinkImage } from "../field/ocr";
 import { jobCompanyNames, jobCourses, normalizeEid } from "../lib/jobs";
 import type { Job } from "../types";
+import { IdKindChoice } from "./IdKindChoice";
 import { IdDropZone } from "./TraineeEditor";
 
 /** Office form to put trainees on the attendance sheet: one at a time (with ID card) or many at once. */
@@ -16,6 +17,7 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
   const [f, setF] = useState({
     name: "",
     eid: "",
+    idKind: "eid" as "eid" | "passport",
     phone: "",
     company: j.customerName || companies[0] || "",
     course: courses.length > 1 ? courses[0] : j.course || "",
@@ -52,6 +54,7 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
       ...x,
       name: local.name,
       eid: local.id,
+      idKind: local.id ? "eid" : x.idKind,
       phone: x.phone || fetched.mobileNumber || "",
     }));
   }
@@ -62,7 +65,8 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
       company: f.company.trim() || j.customerName || "",
       mobileNumber: row.phone.replace(/[\s-+]/g, ""),
       nationality: "",
-      idOrVisaNo: normalizeEid(row.eid),
+      idOrVisaNo: f.idKind === "passport" ? row.eid.trim() : normalizeEid(row.eid),
+      idDocument: f.idKind,
       course: f.course || j.course || "",
       autoFetched: false,
       ...extra,
@@ -246,8 +250,13 @@ export function AddTrainee({ job: j, onAdded }: { job: Job; onAdded: () => void 
               <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} onKeyDown={(e) => e.key === "Enter" && addOne()} />
             </div>
             <div>
-              <label>Emirates ID</label>
-              <input value={f.eid} placeholder="784-1990-1234567-1" onChange={(e) => setF({ ...f, eid: e.target.value })} />
+              <IdKindChoice kind={f.idKind} onChange={(idKind) => setF({ ...f, idKind })} />
+              <label>{f.idKind === "passport" ? "Passport No" : "Emirates ID"}</label>
+              <input
+                value={f.eid}
+                placeholder={f.idKind === "passport" ? "Passport number" : "784-1990-1234567-1"}
+                onChange={(e) => setF({ ...f, eid: e.target.value })}
+              />
             </div>
             <div>
               <label>Phone</label>

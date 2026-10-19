@@ -92,6 +92,7 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
   return {
     name: c.name,
     eid: c.idOrVisaNo || trainee?.idOrVisaNo || "",
+    idDocument: (c.idDocument || trainee?.idDocument) === "passport" ? "passport" : "eid",
     company: (() => {
       const pick = [trainee?.company, c.company, job.certificateUnder, job.customerName]
         .map((v) => String(v || "").trim())
@@ -111,7 +112,40 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
     photoDataUrl: trainee?.photoDataUrl || trainee?.extraPhotoDataUrl || "",
     qrDataUrl: c.qrDataUrl || "",
     design: "achievement",
+    companyScale: clampCompanyScale(job.companyScale),
   };
+}
+
+/** 1 keeps the automatic fit. Smaller values shrink a long employer name further. */
+function employerSize(text: string, scale: number): string {
+  const len = text.trim().length;
+  const base = len > 52 ? 0.78 : len > 40 ? 0.88 : len > 28 ? 0.95 : 1;
+  return `${(base * clampCompanyScale(scale)).toFixed(2)}em`;
+}
+
+export function clampCompanyScale(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(1, Math.max(0.55, n));
+}
+
+/** Word company line, in half-points, sized so it stays clear of the border and the QR. */
+export function companyWordHalfPoints(text: string, baseHalfPoints: number, scale: unknown): number {
+  const len = Math.max(1, text.trim().length);
+  const fitted = len <= 34 ? baseHalfPoints : Math.max(20, Math.round((baseHalfPoints * 34) / len));
+  return Math.max(16, Math.round(fitted * clampCompanyScale(scale)));
+}
+
+export function shrinkCompanyParagraph(xml: string, halfPoints: number): string {
+  const at = xml.indexOf("{{COMPANY}}");
+  if (at < 0) return xml;
+  const start = xml.lastIndexOf("<w:p", at);
+  const end = xml.indexOf("</w:p>", at);
+  if (start < 0 || end < 0) return xml;
+  const para = xml.slice(start, end)
+    .replace(/<w:sz w:val="\d+"\/>/g, `<w:sz w:val="${halfPoints}"/>`)
+    .replace(/<w:szCs w:val="\d+"\/>/g, `<w:szCs w:val="${halfPoints}"/>`);
+  return xml.slice(0, start) + para + xml.slice(end);
 }
 
 async function loadCertificateArtwork(): Promise<Buffer | null> {
@@ -142,14 +176,18 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
   y = doc.y + 4;
   if (s.eid) {
     doc.fillColor("#111").font("Times-Bold").fontSize(11)
-      .text(`(EID NO: ${s.eid})`, x, y, { width: w, align: "center" });
+      .text(`(${s.idDocument === "passport" ? "Passport No" : "EID NO"}: ${s.eid})`, x, y, { width: w, align: "center" });
     y = doc.y + 8;
   }
   doc.fillColor("#333").font("Times-Italic").fontSize(11)
     .text("Employed by", x, y, { width: w, align: "center" });
   y = doc.y + 4;
-  doc.fillColor(navy).font("Times-Bold").fontSize(13)
-    .text(s.company.toUpperCase(), x, y, { width: w, align: "center" });
+  const company = s.company.toUpperCase();
+  let companySize = 13 * s.companyScale;
+  doc.font("Times-Bold").fillColor(navy);
+  while (companySize > 8 && doc.fontSize(companySize).widthOfString(company) > w) companySize -= 0.5;
+  doc.font("Times-Bold").fontSize(companySize)
+    .text(company, x, y, { width: w, align: "center" });
   y = doc.y + 8;
   doc.fillColor("#333").font("Times-Italic").fontSize(11)
     .text("has successfully completed one day safety training for", x, y, { width: w, align: "center" });
@@ -229,9 +267,11 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 .lead{position:absolute;left:10%;right:30%;top:58.4%;text-align:center;font-style:italic;font-weight:700;font-size:13px;font-size:1.45cqi;color:#16325c;white-space:nowrap}
 .cert-course{position:absolute;left:8%;right:30%;top:62.2%;text-align:center;font-weight:700;font-size:15px;font-size:2cqi;text-transform:uppercase;color:#16325c;white-space:nowrap}
 .meta-col{position:absolute;top:68.2%;font-weight:700;font-size:13px;font-size:1.45cqi;color:#16325c;text-align:left;line-height:1.85}
-.meta-left{left:14%}
-.meta-right{left:54%}
-.meta-col span{display:inline-block;min-width:13.5cqi}
+.meta-left{left:12%;width:40%}
+.meta-right{left:54%;width:26%}
+.meta-col div{overflow-wrap:anywhere}
+.meta-col span{display:inline-block;min-width:13.5cqi;vertical-align:top}
+.employer{font-size:0.92em;line-height:1.2}
 .auth{position:absolute;left:15%;top:77%;width:22%;text-align:left;font-weight:700;font-style:italic;letter-spacing:.8px;font-size:14px;font-size:1.6cqi}
 .auth-sign{position:absolute;left:14%;top:79.4%;width:24%;height:5.4%;object-fit:contain;object-position:left center;z-index:3}
 .auth-seal{position:absolute;left:39%;top:77.4%;width:13%;height:auto;object-fit:contain;z-index:3}
@@ -247,8 +287,8 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
   <div class="lead">has successfully completed one day safety training for</div>
   <div class="cert-course">${esc(s.course)}</div>
   <div class="meta-col meta-left">
-    <div><span>EID Number</span> ${esc(s.eid || "-")}</div>
-    <div><span>Employed by</span> ${esc(company)}</div>
+    <div><span>${s.idDocument === "passport" ? "Passport No" : "EID Number"}</span> ${esc(s.eid || "-")}</div>
+    <div><span>Employed by</span> <b class="employer" style="font-size:${employerSize(company, s.companyScale)}">${esc(company)}</b></div>
     <div><span>Training Date</span> ${esc(formatCertDate(s.trainingDate))}</div>
   </div>
   <div class="meta-col meta-right">
@@ -365,21 +405,38 @@ function drawPrintedCertificate(
   const labelW = px(100);
   const valueW = px(145);
   const meta: Array<[string, string, string, string]> = [
-    ["EID Number", s.eid || "-", "Certificate No.", s.certificateNo],
+    [s.idDocument === "passport" ? "Passport No" : "EID Number", s.eid || "-", "Certificate No.", s.certificateNo],
     ["Employed by", s.company || "-", "Job No.", s.orderNo || s.jobNo],
     ["Training Date", formatCertDate(s.trainingDate), "Expiry Date", formatCertDate(s.expiresOn)],
   ];
-  const valueSize = (text: string) => {
-    let size = 8;
-    doc.font("Times-Bold");
-    while (size > 6.5 && doc.fontSize(size).widthOfString(text) > valueW) size -= 0.25;
-    const lines = doc.fontSize(size).widthOfString(text) > valueW ? 2 : 1;
-    return { size, lines };
+  const scale = s.companyScale;
+  const linesAt = (text: string, size: number) => {
+    doc.font("Times-Bold").fontSize(size);
+    const words = String(text || "-").split(/\s+/).filter(Boolean);
+    if (!words.length) return 1;
+    let lines = 1;
+    let width = 0;
+    for (const word of words) {
+      const wordW = doc.widthOfString(word);
+      if (wordW > valueW) return 3;
+      const gap = width ? doc.widthOfString(" ") : 0;
+      if (width && width + gap + wordW > valueW) {
+        lines += 1;
+        width = wordW;
+      } else width += gap + wordW;
+    }
+    return lines;
+  };
+  const valueSize = (text: string, scaled: boolean) => {
+    let size = 8 * (scaled ? scale : 1);
+    const floor = scaled ? Math.max(5, 6.5 * scale) : 6.5;
+    while (size > floor && linesAt(text, size) > 2) size -= 0.25;
+    return { size, lines: Math.min(2, linesAt(text, size)) };
   };
   for (const [l1, v1, l2, v2] of meta) {
-    const left = valueSize(v1);
-    const right = valueSize(v2);
-    const rowH = Math.max(left.lines, right.lines) === 2 ? 22 : py(18);
+    const left = valueSize(v1, l1 === "Employed by");
+    const right = valueSize(v2, false);
+    const rowH = Math.max(left.lines, right.lines) === 2 ? 16 : py(16);
     doc.font("Times-Bold").fontSize(8).fillColor(navy).text(l1, leftX, y, { width: labelW, lineBreak: false });
     doc.font("Times-Bold").fontSize(left.size).fillColor(navy).text(v1, leftX + labelW, y, { width: valueW, height: rowH, lineBreak: left.lines === 2 });
     doc.font("Times-Bold").fontSize(8).fillColor(navy).text(l2, rightX, y, { width: labelW, lineBreak: false });

@@ -4,6 +4,7 @@ import { apiBase, downloadBlob, fapi } from "./api";
 import { Capture } from "./Capture";
 import { chipClass, fieldDate, isTrainer, isTrainingJob, statusLabel, useField } from "./FieldApp";
 import { formatEidLocal, imageForRead, ocrEmiratesCard, prepareIdPhoto, shrinkImage } from "./ocr";
+import { IdKindChoice } from "../components/IdKindChoice";
 import { usePhotoCrop } from "../components/PhotoCropper";
 import { Pad, type PadHandle } from "./Pad";
 import { editCourseChoices, printedTrNo } from "../lib/jobs";
@@ -542,7 +543,7 @@ export function Attendance({
         idCardDataUrl: card,
         ...(a.photoDataUrl ? {} : { photoDataUrl: portrait || card }),
         ...(name ? { name } : {}),
-        ...(idOrVisaNo ? { idOrVisaNo } : {}),
+        ...(idOrVisaNo ? { idOrVisaNo, idDocument: "eid" as const } : {}),
         ...(nationality ? { nationality } : {}),
         ...(dateOfBirth ? { dateOfBirth } : {}),
         autoFetched: !!idOrVisaNo,
@@ -786,7 +787,7 @@ export function Attendance({
                       <b>
                         {i + 1}. {a.name}
                       </b>
-                      <div className="mini">EID: {a.idOrVisaNo || "re-upload ID or type it"}</div>
+                      <div className="mini">{a.idDocument === "passport" ? "Passport No" : "EID"}: {a.idOrVisaNo || "re-upload ID or type it"}</div>
                       <div className="mini">Employed by: {personCompany[a.id] ?? (a.company || "-")}</div>
                       {pendingBack?.id === a.id && (
                         <label className="checkline" style={{ display: "block", marginTop: 6 }}>
@@ -1142,6 +1143,7 @@ function RowEdit({
   const [f, setF] = useState({
     name: a.name || "",
     eid: eid || a.idOrVisaNo || "",
+    idKind: (a.idDocument === "passport" ? "passport" : "eid") as "eid" | "passport",
     phone: a.mobileNumber || "",
     company: a.company || "",
     certifiedTo: certifiedTo || "",
@@ -1170,6 +1172,7 @@ function RowEdit({
       await fapi("PATCH", `/api/training/${j.id}/attendees/${a.id}`, {
         name,
         idOrVisaNo: f.eid.trim(),
+        idDocument: f.idKind,
         mobileNumber,
         company,
         courses: ticked,
@@ -1211,11 +1214,12 @@ function RowEdit({
       )}
       <label className="fl">Name</label>
       <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-      <label className="fl">Emirates ID</label>
+      <IdKindChoice kind={f.idKind} onChange={(idKind) => setF({ ...f, idKind })} />
+      <label className="fl">{f.idKind === "passport" ? "Passport No" : "Emirates ID"}</label>
       <input
         value={f.eid}
         autoFocus={focusEid}
-        placeholder="784-...."
+        placeholder={f.idKind === "passport" ? "Passport number" : "784-...."}
         onChange={(e) => setF({ ...f, eid: e.target.value })}
       />
       <label className="fl">Phone</label>

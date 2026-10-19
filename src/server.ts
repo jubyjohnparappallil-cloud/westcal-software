@@ -260,11 +260,14 @@ function drawIdPhoto(doc: PDFDocument, buf: Buffer, photoX: number, photoY: numb
     const dy = photoY + (photoH - regionH * scale) / 2 - fy * size.h * scale;
     doc.image(buf, dx, dy, { width: size.w * scale, height: size.h * scale });
   } else {
-    doc.image(buf, photoX, photoY, {
-      cover: [photoW, photoH],
-      align: "center",
-      valign: "center",
-    });
+    const img = doc.openImage(buf);
+    const cover = Math.max(photoW / img.width, photoH / img.height);
+    const scale = cover * 0.9;
+    const dw = img.width * scale;
+    const dh = img.height * scale;
+    const dx = photoX + (photoW - dw) / 2;
+    const dy = photoY;
+    doc.image(buf, dx, dy, { width: dw, height: dh });
   }
   doc.restore();
 }

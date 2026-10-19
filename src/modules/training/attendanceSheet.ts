@@ -67,7 +67,7 @@ function traineeRow(job: TrainingJob, a: TrainingJob["attendees"][number], i: nu
     <td class="num">${i + 1}</td>
     <td>
       <b>${html(a.name)}</b><br>
-      <span class="sub">EID: ${html(a.idOrVisaNo || "-")}</span><br>
+      <span class="sub">${a.idDocument === "passport" ? "Passport No" : "EID"}: ${html(a.idOrVisaNo || "-")}</span><br>
       <span class="sub">Training Date: ${html(formatDob(job.trainingDate))}</span><br>
       <span class="sub">Company: ${html(a.company || job.customerName || "-")}</span><br>
       <span class="sub">Certified to: ${html(String(job.certificateUnder ?? "").trim() || a.company || job.customerName)}</span><br>
@@ -267,7 +267,7 @@ export async function sendAttendanceSheetPdf(
     doc.fillColor("#111").font("Helvetica").fontSize(10).text(String(i + 1), 42, y + 8, { width: 24 });
     doc.font("Helvetica-Bold").text(a.name, 70, y + 6, { width: 250 });
     doc.font("Helvetica").fontSize(9).fillColor("#444")
-      .text(`EID: ${a.idOrVisaNo || "-"}`, 70, y + 22, { width: 250 })
+      .text(`${a.idDocument === "passport" ? "Passport No" : "EID"}: ${a.idOrVisaNo || "-"}`, 70, y + 22, { width: 250 })
       .text(`Training date: ${formatDob(job.trainingDate)}`, 70, y + 34, { width: 250 })
       .text(`Company: ${a.company || job.customerName || "-"}`, 70, y + 46, { width: 250 })
       .text(`Certified to: ${String(job.certificateUnder ?? "").trim() || a.company || job.customerName}`, 70, y + 58, { width: 250 })

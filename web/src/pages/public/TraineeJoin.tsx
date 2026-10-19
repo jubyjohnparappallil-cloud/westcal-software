@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { api } from "../../api";
+import { IdKindChoice } from "../../components/IdKindChoice";
 import "../../styles.css";
 
 interface JoinInfo {
@@ -14,6 +15,7 @@ interface JoinInfo {
 interface Slot {
   name?: string;
   idOrVisaNo?: string;
+  idDocument?: "eid" | "passport";
   mobileNumber?: string;
   company?: string;
   course?: string;
@@ -169,6 +171,7 @@ function JoinForm({
   const [f, setF] = useState({
     name: slot?.name || "",
     id: slot?.idOrVisaNo || "",
+    idKind: (slot?.idDocument === "passport" ? "passport" : "eid") as "eid" | "passport",
     dob: "",
     nat: "",
     mob: slot?.mobileNumber || "",
@@ -192,6 +195,7 @@ function JoinForm({
       name: f.name,
       company: f.company,
       idOrVisaNo: f.id,
+      idDocument: f.idKind,
       nationality: f.nat,
       mobileNumber: mob,
       dateOfBirth: f.dob || undefined,
@@ -219,8 +223,9 @@ function JoinForm({
       <p className="muted">Check your details, sign with your finger, then send.</p>
       <label>Full name *</label>
       <input value={f.name} onChange={set("name")} />
-      <label>Emirates ID / Visa no</label>
-      <input value={f.id} onChange={set("id")} />
+      <IdKindChoice kind={f.idKind} onChange={(idKind) => setF({ ...f, idKind })} />
+      <label>{f.idKind === "passport" ? "Passport No" : "Emirates ID / Visa no"}</label>
+      <input value={f.id} placeholder={f.idKind === "passport" ? "Passport number" : "784-...."} onChange={set("id")} />
       <label>Date of birth</label>
       <input type="date" value={f.dob} onChange={set("dob")} />
       <label>Nationality</label>

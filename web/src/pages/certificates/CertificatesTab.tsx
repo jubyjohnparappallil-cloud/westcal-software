@@ -2,6 +2,7 @@ import { Fragment, useState } from "react";
 import { api } from "../../api";
 import { useApp } from "../../app-context";
 import { CertificatePreview } from "../../components/CertificatePreview";
+import { IdKindChoice } from "../../components/IdKindChoice";
 import { Modal } from "../../components/Modal";
 import { Pagination, usePaged } from "../../components/Pagination";
 import { usePhotoCrop } from "../../components/PhotoCropper";
@@ -165,11 +166,13 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
     certificateNo: c.certificateNo || "",
     name: c.name || "",
     idOrVisaNo: c.idOrVisaNo || "",
+    idDocument: ((c.idDocument || attendee?.idDocument) === "passport" ? "passport" : "eid") as "eid" | "passport",
     certifiedTo: j.certificateUnder || c.company || j.customerName || "",
     trainingDate: c.trainingDate || "",
     expiresOn: c.expiresOn || "",
   });
   const [photo, setPhoto] = useState(attendee?.photoDataUrl || "");
+  const [companyScale, setCompanyScale] = useState(j.companyScale ? String(j.companyScale) : "1");
   const [err, setErr] = useState("");
   const { crop, dialog: cropDialog } = usePhotoCrop();
   const ref = c.verificationRef ? encodeURIComponent(c.verificationRef) : "";
@@ -199,11 +202,15 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
       const printed = (current?.name || chosen[0].name).trim();
       const { certifiedTo, ...rest } = f;
       const body = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, v.trim()]));
-      await api("PATCH", `/api/training/${j.id}`, { certificateUnder: certifiedTo.trim() });
+      await api("PATCH", `/api/training/${j.id}`, {
+        certificateUnder: certifiedTo.trim(),
+        companyScale: Number(companyScale),
+      });
       if (c.attendeeId) {
         await api("PATCH", `/api/training/${j.id}/attendees/${c.attendeeId}`, {
           name: String(body.name || ""),
           idOrVisaNo: String(body.idOrVisaNo || ""),
+          idDocument: f.idDocument,
           courses: chosen.map((row) => row.name.trim()),
         });
       }
@@ -266,12 +273,23 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
             <input {...field("name")} />
           </div>
           <div>
-            <label>Emirates ID</label>
+            <IdKindChoice kind={f.idDocument} onChange={(idDocument) => setF({ ...f, idDocument })} />
+            <label>{f.idDocument === "passport" ? "Passport No" : "Emirates ID"}</label>
             <input {...field("idOrVisaNo")} />
           </div>
           <div>
             <label>Certified to</label>
             <input {...field("certifiedTo")} />
+          </div>
+          <div className="span-2">
+            <label>Company name size</label>
+            <select value={companyScale} onChange={(e) => setCompanyScale(e.target.value)}>
+              <option value="1">Auto fit</option>
+              <option value="0.85">Smaller</option>
+              <option value="0.7">Small</option>
+              <option value="0.55">Smallest</option>
+            </select>
+            <p className="hint">A long name shrinks so it stays off the border and the QR. Choose a smaller size if it still overlaps. This size is used for every certificate on the job.</p>
           </div>
           <div className="span-2">
             <label>Training course</label>

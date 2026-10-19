@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { api } from "../api";
 import { useApp } from "../app-context";
+import { IdKindChoice } from "./IdKindChoice";
 import { usePhotoCrop, type CropPurpose } from "./PhotoCropper";
 import { Pad, type PadHandle } from "../field/Pad";
 import { formatEidLocal, imageForRead, ocrEmiratesCard, prepareIdPhoto, shrinkImage } from "../field/ocr";
@@ -111,6 +112,7 @@ export function TraineeEditor({
   const [f, setF] = useState({
     name: attendee.name || "",
     idOrVisaNo: attendee.idOrVisaNo || "",
+    idDocument: (attendee.idDocument === "passport" ? "passport" : "eid") as "eid" | "passport",
     mobileNumber: attendee.mobileNumber || "",
     company: attendee.company || "",
   });
@@ -141,7 +143,7 @@ export function TraineeEditor({
     await api("PATCH", `/api/training/${job.id}/attendees/${attendee.id}`, {
       idCardDataUrl: card,
       ...(attendee.photoDataUrl ? {} : { photoDataUrl: portrait || card }),
-      ...(eid ? { idOrVisaNo: eid } : {}),
+      ...(eid ? { idOrVisaNo: eid, idDocument: "eid" as const } : {}),
       ...(fetched.name ? { name: fetched.name } : {}),
       nationality: fetched.nationality || undefined,
       dateOfBirth: fetched.dateOfBirth || undefined,
@@ -226,7 +228,8 @@ export function TraineeEditor({
           <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
         </div>
         <div>
-          <label>Emirates ID</label>
+          <IdKindChoice kind={f.idDocument} onChange={(idDocument) => setF({ ...f, idDocument })} />
+          <label>{f.idDocument === "passport" ? "Passport No" : "Emirates ID"}</label>
           <input value={f.idOrVisaNo} onChange={(e) => setF({ ...f, idOrVisaNo: e.target.value })} />
         </div>
         <div>

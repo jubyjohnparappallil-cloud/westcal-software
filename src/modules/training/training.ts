@@ -25,6 +25,12 @@ export type TrainingStatus =
 /** Once the trainer has started, a job can no longer be cancelled. */
 const CANCELLABLE: TrainingStatus[] = ["Created", "Assigned"];
 
+function clampStoredCompanyScale(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(1, Math.max(0.55, n));
+}
+
 export type TrainingMode = "Online" | "Onsite" | "Offsite";
 
 /** Roles that a job can be assigned to and that see it in "My assigned jobs". */
@@ -133,6 +139,8 @@ export interface Attendee {
   name: string;
   company: string;
   idOrVisaNo: string;
+  /** Passport numbers print as Passport No. Emirates ID stays EID NO. */
+  idDocument?: "eid" | "passport";
   nationality: string;
   mobileNumber: string;
   /** ISO yyyy-mm-dd, read off the ID card. */
@@ -161,6 +169,7 @@ export interface TrainingCertificate {
   jobNo: string;
   name: string;
   idOrVisaNo?: string;
+  idDocument?: "eid" | "passport";
   company: string;
   course: string;
   trainingDate: string;
@@ -299,6 +308,8 @@ export interface TrainingJob {
   certificateUnder?: string;
   /** Chosen Westcal certificate template when issuing. */
   certificateDesign?: string;
+  /** Extra shrink for a long employer name. 1 keeps the automatic fit. */
+  companyScale?: number;
   /** Public join link token sent to trainees (no login). */
   traineeInviteToken?: string;
   /** Optional supporting files such as invoice, quotation, LPO or report. */
@@ -526,6 +537,7 @@ export interface CreateTrainingInput {
   protocolNotes?: string;
   lineItems?: JobLineItem[];
   certificateDesign?: string;
+  companyScale?: number;
 }
 
 /** A notification for the mobile/side app (e.g. "job assigned to you"). */
@@ -962,6 +974,7 @@ export class TrainingService {
       company: attendee.company || job.customerName,
       course: attendee.course || job.course,
       idOrVisaNo: attendee.idOrVisaNo || "",
+      idDocument: attendee.idDocument === "passport" ? "passport" : "eid",
       hasPhoto: !!(attendee.photoDataUrl || attendee.extraPhotoDataUrl),
       hasSignature: !!attendee.signature,
     };
@@ -1037,6 +1050,7 @@ export class TrainingService {
         ? (String(patch.layoutImageDataUrl || "").startsWith("data:image/") ? String(patch.layoutImageDataUrl) : undefined)
         : job.layoutImageDataUrl,
       certificateDesign: patch.certificateDesign ?? job.certificateDesign,
+      companyScale: patch.companyScale !== undefined ? clampStoredCompanyScale(patch.companyScale) : job.companyScale,
       lineItems: patch.lineItems ?? job.lineItems,
     });
     if (job.serviceType === "Mapping" && (patch.mappingType !== undefined || patch.mappingRange !== undefined)) {
@@ -1288,6 +1302,7 @@ export class TrainingService {
       name: string;
       company: string;
       idOrVisaNo: string;
+      idDocument?: "eid" | "passport";
       nationality: string;
       mobileNumber: string;
       dateOfBirth?: string;
@@ -1336,6 +1351,7 @@ export class TrainingService {
       name: string;
       company: string;
       idOrVisaNo?: string;
+      idDocument?: "eid" | "passport";
       nationality?: string;
       mobileNumber: string;
       dateOfBirth?: string;
@@ -1363,6 +1379,7 @@ export class TrainingService {
       name: fetched.name.trim(),
       company: fetched.company?.trim() ?? "",
       idOrVisaNo: fetched.idOrVisaNo?.trim() ?? "",
+      idDocument: fetched.idDocument === "passport" ? "passport" : "eid",
       nationality: fetched.nationality?.trim() ?? "",
       mobileNumber: fetched.mobileNumber,
       dateOfBirth: fetched.dateOfBirth,
@@ -1540,6 +1557,7 @@ export class TrainingService {
       name: string;
       company: string;
       idOrVisaNo: string;
+      idDocument: "eid" | "passport";
       nationality: string;
       mobileNumber: string;
       dateOfBirth: string;
@@ -1569,6 +1587,7 @@ export class TrainingService {
       }
     }
     if (patch.idOrVisaNo !== undefined) attendee.idOrVisaNo = patch.idOrVisaNo.trim();
+    if (patch.idDocument !== undefined) attendee.idDocument = patch.idDocument === "passport" ? "passport" : "eid";
     if (patch.nationality !== undefined) attendee.nationality = patch.nationality.trim();
     if (patch.mobileNumber !== undefined) {
       // Mobile number is now optional - validation removed
@@ -1614,6 +1633,7 @@ export class TrainingService {
           name: attendee.name,
           company: attendee.company,
           idOrVisaNo: attendee.idOrVisaNo,
+          idDocument: attendee.idDocument,
           nationality: attendee.nationality,
           mobileNumber: attendee.mobileNumber,
           dateOfBirth: attendee.dateOfBirth,
@@ -1709,6 +1729,7 @@ export class TrainingService {
         await this.pushCertificate(job, {
           attendeeId: attendee.id,
           idOrVisaNo: attendee.idOrVisaNo,
+          idDocument: attendee.idDocument === "passport" ? "passport" : "eid",
           name: attendee.name,
           company: (attendee.company || job.certificateUnder || job.customerName).trim(),
           course: attendeeCertificateCourse(job, attendee.course),
@@ -1747,6 +1768,7 @@ export class TrainingService {
       await this.pushCertificate(job, {
         attendeeId: attendee.id,
         idOrVisaNo: attendee.idOrVisaNo,
+        idDocument: attendee.idDocument === "passport" ? "passport" : "eid",
         name: attendee.name,
         company: (attendee.company || job.certificateUnder || job.customerName).trim(),
         course: attendeeCertificateCourse(job, attendee.course),
@@ -1762,7 +1784,7 @@ export class TrainingService {
   async editCertificate(
     jobId: string,
     certificateId: string,
-    patch: Partial<Pick<TrainingCertificate, "name" | "company" | "course" | "trainingDate" | "expiresOn" | "idOrVisaNo" | "certificateNo">>
+    patch: Partial<Pick<TrainingCertificate, "name" | "company" | "course" | "trainingDate" | "expiresOn" | "idOrVisaNo" | "idDocument" | "certificateNo">>
   ): Promise<TrainingCertificate> {
     const job = this.getJob(jobId);
     const cert = job.certificates.find((c) => c.id === certificateId);
@@ -1812,6 +1834,7 @@ export class TrainingService {
       }
     }
     if (patch.idOrVisaNo !== undefined) cert.idOrVisaNo = patch.idOrVisaNo.trim();
+    if (patch.idDocument !== undefined) cert.idDocument = patch.idDocument === "passport" ? "passport" : "eid";
     if (patch.trainingDate !== undefined) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(patch.trainingDate)) {
         throw new ValidationError("training date must be yyyy-mm-dd", "trainingDate");
@@ -1828,6 +1851,7 @@ export class TrainingService {
     if (attendee) {
       if (patch.name !== undefined) attendee.name = cert.name;
       if (patch.idOrVisaNo !== undefined) attendee.idOrVisaNo = cert.idOrVisaNo || "";
+      if (patch.idDocument !== undefined) attendee.idDocument = cert.idDocument;
       if (patch.course !== undefined) attendee.course = cert.course;
     }
     job.updatedAt = new Date();
@@ -1844,6 +1868,7 @@ export class TrainingService {
       if (attendee) {
         cert.name = attendee.name;
         cert.idOrVisaNo = attendee.idOrVisaNo;
+        cert.idDocument = attendee.idDocument === "passport" ? "passport" : "eid";
         if (attendee.course) cert.course = attendeeCertificateCourse(job, attendee.course);
       }
       if (opts.dates && job.trainingDate) {
@@ -1859,7 +1884,7 @@ export class TrainingService {
   private async pushCertificate(
     job: TrainingJob,
     fields: Pick<TrainingCertificate, "attendeeId" | "name" | "company" | "course" | "trainingDate" | "expiresOn"> &
-      Partial<Pick<TrainingCertificate, "idOrVisaNo">>
+      Partial<Pick<TrainingCertificate, "idOrVisaNo" | "idDocument">>
   ): Promise<void> {
     const certificateNo = nextCertificateNo(job);
     this.codes.validateBarcodeEncodable(certificateNo);

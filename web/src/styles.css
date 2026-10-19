@@ -1360,10 +1360,18 @@ td.row-actions .btn {
   line-height: 1.85;
 }
 .west-cert .meta-left {
-  left: 14%;
+  left: 12%;
+  width: 40%;
 }
 .west-cert .meta-right {
   left: 54%;
+  width: 26%;
+}
+.west-cert .meta-col div {
+  overflow-wrap: anywhere;
+}
+.west-cert .employer {
+  line-height: 1.2;
 }
 .west-cert .meta-col span {
   display: inline-block;

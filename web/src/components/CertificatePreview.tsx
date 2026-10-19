@@ -1,12 +1,21 @@
 import { certDate, printedTrNo } from "../lib/jobs";
 import type { Certificate, Job } from "../types";
 
+function employerTextSize(text: string, scale: unknown): string {
+  const n = Number(scale);
+  const safe = Number.isFinite(n) ? Math.min(1, Math.max(0.55, n)) : 1;
+  const len = text.trim().length;
+  const base = len > 52 ? 0.78 : len > 40 ? 0.88 : len > 28 ? 0.95 : 1;
+  return `${(base * safe).toFixed(2)}em`;
+}
+
 export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
   const ref = c.verificationRef ? encodeURIComponent(c.verificationRef) : "";
   const attendee = (j.attendees || []).find((a) => a.id === c.attendeeId);
   const photo = attendee && (attendee.photoDataUrl || attendee.extraPhotoDataUrl);
   const design = j.certificateDesign || "achievement";
   const employer = j.certificateUnder || c.company || j.customerName || "-";
+  const employerFont = employerTextSize(employer, j.companyScale);
   return (
     <div className={`west-cert design-${design}`}>
       {photo && (
@@ -21,10 +30,10 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
       <div className="cert-course">{c.course || ""}</div>
       <div className="meta-col meta-left">
         <div>
-          <span>EID Number</span> {c.idOrVisaNo || "-"}
+          <span>{(c.idDocument || attendee?.idDocument) === "passport" ? "Passport No" : "EID Number"}</span> {c.idOrVisaNo || "-"}
         </div>
         <div>
-          <span>Employed by</span> {employer}
+          <span>Employed by</span> <b className="employer" style={{ fontSize: employerFont }}>{employer}</b>
         </div>
         <div>
           <span>Training Date</span> {certDate(c.trainingDate)}

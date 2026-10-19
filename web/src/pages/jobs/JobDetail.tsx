@@ -688,7 +688,7 @@ function TraineeList({ job, onChanged }: { job: Job; onChanged: () => void }) {
                     </b>
                     {a.signature ? " · signed" : ""}
                     <div className="muted" style={{ marginTop: 4 }}>
-                      EID: {a.idOrVisaNo || "re-upload ID or type it"} · {a.company || job.customerName} · {a.course || job.course || ""}
+                      {a.idDocument === "passport" ? "Passport No" : "EID"}: {a.idOrVisaNo || "re-upload ID or type it"} · {a.company || job.customerName} · {a.course || job.course || ""}
                     </div>
                     {canEdit && (
                       <>
