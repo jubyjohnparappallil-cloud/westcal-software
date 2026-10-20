@@ -21,6 +21,13 @@ interface SessionRecord {
   endedAt?: Date;
 }
 
+export interface StoredSession {
+  token: string;
+  userId: string;
+  createdAt: string;
+  lastActivityAt: string;
+}
+
 export interface ResolvedSession {
   userId: string;
 }
@@ -97,6 +104,35 @@ export class AuthService {
     }
     s.lastActivityAt = now;
     return { userId: s.userId };
+  }
+
+  /** Active sign-ins, so a restart does not send everyone back to the login page. */
+  exportActiveSessions(): StoredSession[] {
+    const rows: StoredSession[] = [];
+    for (const session of this.sessions.values()) {
+      if (session.endedAt) continue;
+      rows.push({
+        token: session.token,
+        userId: session.userId,
+        createdAt: session.createdAt.toISOString(),
+        lastActivityAt: session.lastActivityAt.toISOString(),
+      });
+    }
+    return rows;
+  }
+
+  restoreSessions(rows: StoredSession[]): void {
+    for (const row of rows) {
+      if (!row?.token || !row.userId || this.sessions.has(row.token)) continue;
+      this.sessions.set(row.token, {
+        token: row.token,
+        userId: row.userId,
+        createdAt: new Date(row.createdAt),
+        lastActivityAt: new Date(row.lastActivityAt),
+      });
+      if (!this.userSessions.has(row.userId)) this.userSessions.set(row.userId, new Set());
+      this.userSessions.get(row.userId)!.add(row.token);
+    }
   }
 
   /** AC 2.7: terminate all sessions for a user (on deactivation). */

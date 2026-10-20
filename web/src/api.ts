@@ -47,6 +47,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   try {
     data = JSON.parse(text);
   } catch {}
+  if (res.status === 401 && !path.endsWith("/api/sign-in")) {
+    setApiToken(null);
+    try { sessionStorage.removeItem("westcal-office-session"); } catch { /* storage blocked */ }
+    if (typeof location !== "undefined") location.assign("/");
+    throw new Error(data.message || "Sign in required");
+  }
   if (!res.ok) throw new Error(data.message || "Request failed");
   if (isJobListRequest(method, path)) return processJobList(data) as T;
   return data;

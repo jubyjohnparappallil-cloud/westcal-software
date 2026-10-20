@@ -10,15 +10,16 @@ import { createServer as createHttpsServer } from "node:https";
 import { createServer as createNetServer } from "node:net";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, extname, join, normalize } from "node:path";
 import os from "node:os";
 import QRCode from "qrcode";
 import PDFDocument from "pdfkit";
 import { createPlatform, Platform, ROLES } from "./app.js";
-import { DATA_FILE, MYSQL_DATABASE, MYSQL_HOST, MYSQL_PORT, loadPlatformState, savePlatformState } from "./persist.js";
+import { DATA_DIR, DATA_FILE, MYSQL_DATABASE, MYSQL_HOST, MYSQL_PORT, countStoredJobs, loadPlatformState, savePlatformState } from "./persist.js";
 import { AppError, AuthenticationError, AuthorizationError, NotFoundError, ValidationError } from "./shared/errors.js";
+import type { StoredSession } from "./modules/auth/auth.js";
 import { parseEmiratesId } from "./modules/training/idFetch.js";
 import { RegistrationService } from "./modules/auth/registration.js";
 import { createOtpMailer, parseAllowList } from "./modules/auth/mailer.js";
@@ -177,6 +178,22 @@ function ensureDemoUsers(p: Platform): void {
 let persistChain = Promise.resolve();
 let persistMutating = false;
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
+const SESSIONS_FILE = join(DATA_DIR, "sessions.json");
+
+async function restoreSignIns(): Promise<void> {
+  try {
+    const raw = await readFile(SESSIONS_FILE, "utf8");
+    const rows = JSON.parse(raw) as StoredSession[];
+    if (Array.isArray(rows)) platform.auth.restoreSessions(rows);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") console.error("Could not restore sign-ins:", err);
+  }
+}
+
+function rememberSignIns(): Promise<void> {
+  const rows = platform.auth.exportActiveSessions();
+  return writeFile(SESSIONS_FILE, JSON.stringify(rows), "utf8").catch((err) => console.error("Could not store sign-ins:", err));
+}
 function schedulePersist(): void {
   if (persistTimer) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
@@ -1127,6 +1144,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     if (method === "POST" && path === "/api/sign-in") {
       const { identifier, credential } = await readBody(req);
       const { token } = platform.auth.signIn(identifier, credential);
+      rememberSignIns();
       const userId = platform.auth.resolveSession(token).userId;
       const roles = platform.permissions.getUserRoleIds(userId);
       const perms = [...platform.permissions.getEffectivePermissions(userId)];
@@ -1995,7 +2013,13 @@ const server = !httpsServer ? httpServer : createNetServer((socket) => {
 
 async function start(): Promise<void> {
   const restored = await loadPlatformState(platform);
-  ensureDemoUsers(platform);
+  const storedJobs = await countStoredJobs();
+  if ((storedJobs ?? 0) > 0 && restored === 0) {
+    console.error(`Database has ${storedJobs} jobs but they were not loaded. Staying stopped so an empty copy cannot replace them.`);
+    process.exit(1);
+  }
+  if (platform.users.listUsers().length === 0) ensureDemoUsers(platform);
+  await restoreSignIns();
   migrateUserGrants();
   const rolesSynced = syncStoredRoles();
   const relinked = platform.training.relinkMissingAssignees(platform.users.listUsers());
@@ -2027,6 +2051,7 @@ function flushAndExit(): void {
   }
   persistChain
     .then(() => savePlatformState(platform))
+    .then(() => rememberSignIns())
     .catch((err) => console.error("Could not save data:", err))
     .finally(() => process.exit(0));
 }

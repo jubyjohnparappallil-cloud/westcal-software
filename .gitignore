@@ -13,6 +13,7 @@ data/*.db-shm
 data/*.db-wal
 data/platform.json
 data/platform.json.*
+data/sessions.json
 data/map-protocol/
 data/*.pdf
 

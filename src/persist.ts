@@ -148,12 +148,28 @@ function applyState(platform: Platform, data: SavedState): number {
   return data.training?.jobs?.length ?? 0;
 }
 
+/** How many jobs are already stored. Null means the database could not be opened. */
+export async function countStoredJobs(): Promise<number | null> {
+  try {
+    const store = await database();
+    const [rows] = await store.query<RowDataPacket[]>("SELECT COUNT(*) AS n FROM jobs");
+    return Number(rows[0]?.n ?? 0);
+  } catch {
+    return null;
+  }
+}
+
 async function readDatabase(): Promise<SavedState | null> {
   const store = await database();
   const [savedRows] = await store.query<RowDataPacket[]>(
     "SELECT value FROM meta WHERE `key` = 'savedAt'"
   );
-  if (!savedRows.length) return null;
+  let savedAt = savedRows.length ? String(savedRows[0].value) : "";
+  if (!savedAt) {
+    const stored = await countStoredJobs();
+    if (!stored) return null;
+    savedAt = new Date().toISOString();
+  }
   const [users] = await store.query<RowDataPacket[]>("SELECT body FROM users");
   const [jobs] = await store.query<RowDataPacket[]>("SELECT body FROM jobs");
   const [notifications] = await store.query<RowDataPacket[]>("SELECT body FROM notifications");
@@ -165,7 +181,7 @@ async function readDatabase(): Promise<SavedState | null> {
   for (const row of grants) userPermissions[String(row.user_id)] = JSON.parse(String(row.body)) as string[];
   return {
     version: 1,
-    savedAt: String(savedRows[0].value),
+    savedAt,
     users: users.map((row) => JSON.parse(String(row.body))),
     userPermissions: userPermissions as unknown as SavedState["userPermissions"],
     extraCourses: courses.map((row) => ({
@@ -304,6 +320,14 @@ export async function savePlatformState(platform: Platform): Promise<void> {
       .filter((c) => !SEED_COURSES.includes(c.name))
       .map((c) => ({ name: c.name, description: c.description })),
   };
+  const jobCount = payload.training?.jobs?.length ?? 0;
+  if (jobCount === 0) {
+    const existing = await countStoredJobs();
+    if (existing && existing > 0) {
+      console.error(`Refusing to replace ${existing} saved jobs with an empty copy.`);
+      return;
+    }
+  }
   try {
     await writeDatabase(payload);
   } catch (err) {
