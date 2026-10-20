@@ -71,6 +71,9 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
       <button className="btn sec sm" onClick={() => downloads.cardClassic(j.id, c.id, no)}>
         Old ID card
       </button>
+      <button className="btn sec sm" onClick={() => downloads.cardClassicShrink(j.id, c.id, no)}>
+        Old card shrink
+      </button>
       <button className="btn sec sm" onClick={() => downloads.cardLayout(j.id, c.id, no)}>
         Card design
       </button>

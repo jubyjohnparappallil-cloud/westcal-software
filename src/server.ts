@@ -30,6 +30,7 @@ import { sendMappingProtocol } from "./modules/training/mappingProtocol.js";
 import { sendTrainingCertificatePdf, sendTrainingCertificateContentPdf, sendTrainingCertificateLayoutPdf, listCertificateDesigns, CERTIFICATE_DESIGNS_DIR, printedCertificateVerifyHtml } from "./modules/training/certificateTemplate.js";
 import { sendOldCertificateDocx } from "./modules/training/oldCertificateDocx.js";
 import { sendQannatiCertificateDocx } from "./modules/training/qannatiCertificateDocx.js";
+import { sendOldTrainingCardPdf } from "./modules/training/oldIdCard.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 3000;
@@ -1550,13 +1551,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         sendJson(res, 404, { code: "NotFoundError", message: "certificate not found" });
         return;
       }
-      await sendClassicCardPdf(
+      const fit = url.searchParams.get("fit") === "shrink" ? "shrink" : "same";
+      await sendOldTrainingCardPdf(
         res,
         job,
         certificate,
         certificate.verificationRef
           ? verifyLink(certificate.verificationRef)
           : undefined,
+        fit,
       );
       return;
     }

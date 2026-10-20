@@ -29,6 +29,10 @@ export const downloads = {
     downloadFile(`${certBase(jobId, certId)}/classic-card-pdf`, no + "-classic-card.pdf", {
       failMessage: "Old ID card download failed",
     }),
+  cardClassicShrink: (jobId: string, certId: string, no: string) =>
+    downloadFile(`${certBase(jobId, certId)}/classic-card-pdf?fit=shrink`, no + "-old-card-shrink.pdf", {
+      failMessage: "Old ID card download failed",
+    }),
   cardLayout: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/card-layout-pdf`, no + "-card-design.pdf", {
       failMessage: "Card design download failed",
