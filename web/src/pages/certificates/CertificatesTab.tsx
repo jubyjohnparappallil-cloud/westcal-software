@@ -87,6 +87,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
   const [viewing, setViewing] = useState<Certificate | null>(null);
   const certs: Certificate[] = j.certificates || [];
   const paged = usePaged(certs, j.id);
+  const editingCert = certs.find((c) => c.id === editing) || null;
 
   if (!certs.length) return <p className="muted">No certificates on this job.</p>;
 
@@ -101,6 +102,18 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
           </>
         )}
       </p>
+      {editingCert && (
+        <Modal title={editingCert.certificateNo} subtitle={editingCert.name} width={760} onClose={() => setEditing("")}>
+          <CertificateEditor
+            j={j}
+            c={editingCert}
+            onSaved={() => {
+              setEditing("");
+              onChanged();
+            }}
+          />
+        </Modal>
+      )}
       {viewing && (
         <Modal
           title={viewing.certificateNo}
@@ -146,7 +159,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
                     <td>
                       <div className="cert-downloads" style={{ justifyContent: "flex-start", margin: 0 }}>
                         {perms.canIssueCerts() && (
-                          <button className="btn sm" onClick={() => setEditing(isOpen ? "" : c.id)}>
+                          <button type="button" className="btn sm" onClick={() => setEditing(isOpen ? "" : c.id)}>
                             {isOpen ? "Close" : "Edit"}
                           </button>
                         )}
@@ -157,20 +170,6 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
                       </div>
                     </td>
                   </tr>
-                  {isOpen && (
-                    <tr>
-                      <td colSpan={5}>
-                        <CertificateEditor
-                          j={j}
-                          c={c}
-                          onSaved={() => {
-                            setEditing("");
-                            onChanged();
-                          }}
-                        />
-                      </td>
-                    </tr>
-                  )}
                 </Fragment>
               );
             })}
@@ -229,21 +228,25 @@ function CertificateEditor({ j, c, onSaved }: { j: Job; c: Certificate; onSaved:
       const current = courseRows.find((row) => row.key === c.course && row.on);
       const printed = (current?.name || chosen[0].name).trim();
       const { certifiedTo, ...rest } = f;
-      const body = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, v.trim()]));
-      await api("PATCH", `/api/training/${j.id}`, {
-        certificateUnder: certifiedTo.trim(),
-      });
-      if (c.attendeeId) {
-        await api("PATCH", `/api/training/${j.id}/attendees/${c.attendeeId}`, {
-          name: String(body.name || ""),
-          idOrVisaNo: String(body.idOrVisaNo || ""),
-          idDocument: f.idDocument,
-          courses: chosen.map((row) => row.name.trim()),
-        });
-      }
+      const body = Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, String(v).trim()]));
       await api("PATCH", `/api/training/${j.id}/certificates/${c.id}`, { ...body, course: printed });
-      if (c.attendeeId && photo !== (attendee?.photoDataUrl || "")) {
-        await api("PATCH", `/api/training/${j.id}/attendees/${c.attendeeId}`, { photoDataUrl: photo });
+      const nextCertified = certifiedTo.trim();
+      const prevCertified = String(j.certificateUnder || c.company || j.customerName || "").trim();
+      if (nextCertified !== prevCertified) {
+        await api("PATCH", `/api/training/${j.id}`, { certificateUnder: nextCertified });
+      }
+      if (c.attendeeId) {
+        const nextCourses = chosen.map((row) => row.name.trim());
+        const held = coursesForPerson(j, { name: c.name, idOrVisaNo: c.idOrVisaNo, course: c.course });
+        const prevCourses = held.length ? held : [String(c.course || "")].filter(Boolean);
+        const coursesChanged = nextCourses.join("\n") !== prevCourses.join("\n");
+        const photoChanged = photo !== (attendee?.photoDataUrl || "");
+        if (coursesChanged || photoChanged) {
+          await api("PATCH", `/api/training/${j.id}/attendees/${c.attendeeId}`, {
+            ...(coursesChanged ? { name: String(body.name || ""), idOrVisaNo: String(body.idOrVisaNo || ""), idDocument: f.idDocument, courses: nextCourses } : {}),
+            ...(photoChanged ? { photoDataUrl: photo } : {}),
+          });
+        }
       }
       onSaved();
     } catch (e) {
