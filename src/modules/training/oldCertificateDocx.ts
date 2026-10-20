@@ -34,9 +34,10 @@ export async function buildOldCertificateDocx(
   verifyUrl?: string,
 ): Promise<Buffer> {
   const s = certificateSlots(certificate, job);
+  const idNumber = s.idDocument === "passport" ? s.eid.toUpperCase() : s.eid;
   const values: Record<string, string> = {
     "{{NAME}}": xmlEscape(s.name.toUpperCase()),
-    "{{EID}}": xmlEscape(s.eid),
+    "{{EID}}": xmlEscape(idNumber),
     "{{COMPANY}}": xmlEscape(s.company.toUpperCase()),
     "{{COURSE}}": xmlEscape(s.course.toUpperCase()),
     "{{CERTNO}}": xmlEscape(s.certificateNo),
@@ -49,7 +50,7 @@ export async function buildOldCertificateDocx(
   if (!file) throw new Error("old certificate template is missing");
   let xml = await file.async("string");
   xml = shrinkCompanyParagraph(xml, companyNameHalfPoints(s.company, 40, s.companyFit, s.companyScale));
-  if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "Passport No");
+  if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "PASSPORT NO");
   for (const [token, value] of Object.entries(values)) xml = xml.replaceAll(token, value);
   if (verifyUrl) {
     const png = await QRCode.toBuffer(verifyUrl, { type: "png", margin: 2, width: 480, errorCorrectionLevel: "Q" });

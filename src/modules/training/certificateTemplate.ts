@@ -178,8 +178,9 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
     .text(s.name.toUpperCase(), x, y, { width: w, align: "center" });
   y = doc.y + 4;
   if (s.eid) {
+    const idNumber = s.idDocument === "passport" ? s.eid.toUpperCase() : s.eid;
     doc.fillColor("#111").font("Times-Bold").fontSize(11)
-      .text(`(${s.idDocument === "passport" ? "Passport No" : "EID NO"}: ${s.eid})`, x, y, { width: w, align: "center" });
+      .text(`(${s.idDocument === "passport" ? "PASSPORT NO" : "EID NO"}: ${idNumber})`, x, y, { width: w, align: "center" });
     y = doc.y + 8;
   }
   doc.fillColor("#333").font("Times-Italic").fontSize(11)
