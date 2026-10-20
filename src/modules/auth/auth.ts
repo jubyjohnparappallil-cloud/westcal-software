@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { Clock } from "../../shared/clock.js";
 import { AuthenticationError } from "../../shared/errors.js";
 
-const INACTIVITY_TIMEOUT_MS = 30 * 60_000; // 30 minutes (AC 1.3)
+/** Quiet time before a sign-in ends. A work week, so leaving the page open does not return to the login screen. */
+export const INACTIVITY_TIMEOUT_MS = 7 * 24 * 60 * 60_000;
 
 export type UserStatus = "Active" | "Deactivated";
 

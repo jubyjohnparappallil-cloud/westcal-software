@@ -57,7 +57,7 @@ describe("AuthService", () => {
     fc.assert(
       fc.property(
         fc.constantFrom("timeout", "signout", "deactivate", "none"),
-        fc.integer({ min: 0, max: 60 }),
+        fc.integer({ min: 0, max: 8 * 24 * 60 }),
         (condition, idleMinutes) => {
           const clock = new FixedClock();
           const user = makeUser();
@@ -66,7 +66,7 @@ describe("AuthService", () => {
 
           if (condition === "timeout") {
             clock.advanceMinutes(idleMinutes);
-            const shouldExpire = idleMinutes >= 30;
+            const shouldExpire = idleMinutes >= (7 * 24 * 60);
             if (shouldExpire) {
               expect(() => auth.resolveSession(token)).toThrowError(AppError);
             } else {
