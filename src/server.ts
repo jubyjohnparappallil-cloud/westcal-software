@@ -316,14 +316,12 @@ async function sendTrainingCardPdf(
   const textW = textRight - textLeft;
   const name = (c.name || "").toUpperCase();
   doc.font("Helvetica-Bold");
-  let nameSize = 11;
-  const nameW = 220;
+  let nameSize = 12;
+  const nameW = 230;
   const nameLeft = (W - nameW) / 2;
-  const longest = name.split(/\s+/).filter(Boolean).reduce(
-    (a, b) => (doc.fontSize(nameSize).widthOfString(a) >= doc.fontSize(nameSize).widthOfString(b) ? a : b),
-    name,
-  );
-  while (nameSize > 8 && doc.fontSize(nameSize).widthOfString(longest) > nameW) nameSize -= 0.25;
+  while (nameSize > 7 && doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "center" }) > nameSize * 2.2) {
+    nameSize -= 0.25;
+  }
   const nameY = 84;
   const nameHeight = doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "center" }) + 2;
   doc.fillColor(ink).font("Helvetica-Bold").fontSize(nameSize);
@@ -337,11 +335,9 @@ async function sendTrainingCardPdf(
   doc.fillColor(ink).font("Helvetica-Bold").fontSize(tradeSize)
     .text(trade, textLeft, tradeY, { width: textW, align: "center", height: tradeSize + 4 });
 
-  const companyChoices = [trainee?.company, job.certificateUnder, c.company, job.customerName, ...(job.companies || [])]
+  const company = [job.certificateUnder, c.company, trainee?.company, job.customerName]
     .map((name) => (name || "").trim())
-    .filter((name) => name.length > 1)
-    .sort((a, b) => b.length - a.length);
-  const company = companyChoices[0] || "";
+    .find((name) => name.length > 1) || "";
   const rows: Array<[string, string]> = [
     ["Certificate No", c.certificateNo || ""],
     ["Company", company],
@@ -360,10 +356,9 @@ async function sendTrainingCardPdf(
     const rowLabelW = label === "Company" ? Math.ceil(doc.widthOfString("Company")) + 6 : labelW;
     const rowValueX = textLeft + rowLabelW + colonW;
     const rowValueW = (label === "Company" ? photoX - 14 : textRight) - rowValueX;
-    let size = labelSize;
+    const size = labelSize;
     let companyLines = 1;
     if (label === "Company") {
-      size = 7.5;
       doc.font("Helvetica-Bold").fontSize(size);
       if (doc.widthOfString(value) > rowValueW) companyLines = 2;
     }

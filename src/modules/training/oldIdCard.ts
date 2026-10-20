@@ -77,7 +77,7 @@ function useFace(doc: PDFKit.PDFDocument, heavy: boolean): void {
 function fittedSize(doc: PDFKit.PDFDocument, text: string, maxSize: number, maxW: number, heavy: boolean): number {
   useFace(doc, heavy);
   let size = maxSize;
-  const minSize = maxSize * 0.55;
+  const minSize = maxSize * 0.42;
   if (!text || maxW <= 0) return size;
   while (size > minSize && doc.fontSize(size).widthOfString(text) > maxW) size -= 0.2;
   return size;
@@ -275,7 +275,7 @@ export async function sendOldTrainingCardPdf(
     : null;
   const pdf = await renderOldIdCardPdf({
     name: s.name,
-    company: s.company,
+    company: String(job.certificateUnder || c.company || s.company || "").trim(),
     course: s.course,
     trainingDate: s.trainingDate,
     expiresOn: s.expiresOn,
