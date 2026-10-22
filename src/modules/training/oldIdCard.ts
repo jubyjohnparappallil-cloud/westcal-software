@@ -174,6 +174,7 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
     drawFitted(doc, line, u(58), u(24 + i * 23.5), CONTACT, u(280), false);
   });
 
+  // Exact old layout — label "Company:" as in the sample. Use Shrink only when a name is long.
   const rows: Array<[string, string]> = [
     ["Name:", (fields.name || "").toUpperCase()],
     ["Company:", (fields.company || "").toUpperCase()],
@@ -182,7 +183,9 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
     ["Expires On:", formatCertDate(fields.expiresOn)],
     ["Certificate No:", fields.certificateNo || ""],
   ];
+  // Row tops match the sample card — keep the gap under T/M/E/W (do not pull Name up).
   const tops = [155, 194, 225, 254, 283, 312];
+  const nameTop = u(tops[0]);
   const labelX = u(28);
   const valueX = u(210);
   const photoX = u(637);
@@ -192,24 +195,30 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
   const qrSize = u(62);
   const qrX = photoX - qrSize - u(14);
   const qrY = photoY + photoH - qrSize;
-  const fit = fields.fit === "shrink" ? "shrink" : "same";
+  const footerLimit = u(332);
+  // Same size = full BODY font (like short-name sample). Shrink option alone reduces font.
+  const fitMode: OldCardFit = fields.fit === "shrink" ? "shrink" : "same";
+
   let shift = 0;
   const placed = rows.map(([label, value], i) => {
     const y = u(tops[i]) + shift;
     const maxW = (fields.qr && y + BODY > qrY ? qrX : photoX) - valueX - u(6);
-    const lines = fit === "shrink" ? [value] : wrapSameSize(doc, value, maxW);
+    const lines = fitMode === "shrink" ? [value] : wrapSameSize(doc, value, maxW);
     if (lines.length > 1) shift += (lines.length - 1) * BODY * 0.86;
     return { label, y, lines, maxW };
   });
-  const footerLimit = u(332);
   const last = placed[placed.length - 1];
   const lastBottom = last.y + last.lines.length * BODY * 0.9;
   const overflow = lastBottom - footerLimit;
+  // May tighten lower rows only — never move Name above the sample gap under contacts.
+  const maxUp = Math.max(0, placed[0].y - nameTop);
+  const shiftUp = overflow > 0 ? Math.min(overflow, maxUp) : 0;
+
   doc.fillColor(INK);
   for (const row of placed) {
-    const y = row.y - (overflow > 0 ? overflow : 0);
+    const y = row.y - shiftUp;
     drawFitted(doc, row.label, labelX, y, BODY, valueX - labelX - u(6), true);
-    if (fit === "shrink") {
+    if (fitMode === "shrink") {
       drawFitted(doc, row.lines[0], valueX, y, BODY, row.maxW, true);
     } else {
       useFace(doc, true);
@@ -273,9 +282,11 @@ export async function sendOldTrainingCardPdf(
         color: { dark: "#000000", light: "#ffffff" },
       })
     : null;
+  // Company on the old card = trainee employer (not Certified to). Layout stays exact.
+  const traineeCompany = String(trainee?.company || c.company || s.company || job.customerName || "").trim();
   const pdf = await renderOldIdCardPdf({
     name: s.name,
-    company: String(job.certificateUnder || c.company || s.company || "").trim(),
+    company: traineeCompany,
     course: s.course,
     trainingDate: s.trainingDate,
     expiresOn: s.expiresOn,

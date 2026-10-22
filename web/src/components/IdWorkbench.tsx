@@ -96,6 +96,10 @@ function pct(box: Box): { left: string; top: string; width: string; height: stri
   };
 }
 
+function fileKey(f: File) {
+  return `${f.name}:${f.size}:${f.lastModified}`;
+}
+
 /** One person. Crop the front or the back from the photo, then zoom and the lens apply only to that crop. */
 export function IdWorkbench({
   file,
@@ -106,6 +110,13 @@ export function IdWorkbench({
   onRead,
   onReadBack,
   onEdit,
+  onClearCard,
+  onReplace,
+  onRemovePhoto,
+  savedFront = null,
+  savedBack = null,
+  onSavedFront,
+  onSavedBack,
 }: {
   file: File;
   read: Readout | null;
@@ -115,14 +126,27 @@ export function IdWorkbench({
   onRead: (file: File) => void | Promise<void>;
   onReadBack: (file: File) => void | Promise<void>;
   onEdit?: (patch: Readout) => void;
+  /** Clear the saved front card when the Front crop is removed. */
+  onClearCard?: () => void;
+  /** Pick a new photo (or a second photo) to replace the sheet. */
+  onReplace?: (files: File[]) => void;
+  /** Remove the uploaded sheet photo and return to the upload screen. */
+  onRemovePhoto?: () => void;
+  /** Parent-kept front crop so Crop back never loses Front. */
+  savedFront?: File | null;
+  savedBack?: File | null;
+  onSavedFront?: (file: File | null) => void;
+  onSavedBack?: (file: File | null) => void;
 }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const cropRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
   const drag = useRef<{ which: "card" | "photo" | "lens"; edge: string; x: number; y: number; box: Box; root: HTMLDivElement | null } | null>(null);
   const placed = useRef(false);
+  const sheetId = useRef(fileKey(file));
   const [url, setUrl] = useState("");
   const [baseW, setBaseW] = useState(480);
   const [portionZoom, setPortionZoom] = useState(1);
@@ -136,12 +160,14 @@ export function IdWorkbench({
   const [photo, setPhoto] = useState<Box>(FACE);
   const [frontLens, setFrontLens] = useState<Box>(FRONT_LENS);
   const [backLens, setBackLens] = useState<Box>(BACK_LENS);
-  const [frontFile, setFrontFile] = useState<File | null>(null);
+  const [frontFile, setFrontFile] = useState<File | null>(savedFront);
   const [frontUrl, setFrontUrl] = useState("");
-  const [backFile, setBackFile] = useState<File | null>(null);
+  const [backFile, setBackFile] = useState<File | null>(savedBack);
   const [backUrl, setBackUrl] = useState("");
   const [photoPreview, setPhotoPreview] = useState("");
   const [err, setErr] = useState("");
+  const frontRef = useRef<File | null>(savedFront);
+  const backRef = useRef<File | null>(savedBack);
   const lens = view === "back" ? backLens : frontLens;
   const boxes = useRef({ card, photo, lens });
   boxes.current = { card, photo, lens };
@@ -149,34 +175,73 @@ export function IdWorkbench({
   useEffect(() => {
     const next = URL.createObjectURL(file);
     setUrl(next);
-    setPortionZoom(1);
-    setView("front");
-    setFace(false);
-    setFrontFile(null);
-    setBackFile(null);
-    setFrontPiece(null);
-    setBackPiece(null);
-    setFrontPortion((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return "";
-    });
-    setBackPortion((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return "";
-    });
-    setFrontUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return "";
-    });
-    setBackUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return "";
-    });
-    setPhotoPreview("");
-    setErr("");
     placed.current = false;
+    const id = fileKey(file);
+    if (sheetId.current !== id) {
+      sheetId.current = id;
+      // New sheet for cropping only — do not clear Front / Back (parent keeps those).
+      setPortionZoom(1);
+      setFace(false);
+      setFrontPiece(null);
+      setBackPiece(null);
+      setFrontPortion((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return "";
+      });
+      setBackPortion((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return "";
+      });
+      setPhotoPreview("");
+      setErr("");
+      setView(frontRef.current ? "front" : backRef.current ? "back" : "front");
+    }
     return () => URL.revokeObjectURL(next);
   }, [file]);
+
+  useEffect(() => {
+    if (!savedFront) {
+      if (frontRef.current || frontUrl) {
+        frontRef.current = null;
+        setFrontFile(null);
+        setFrontUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return "";
+        });
+      }
+      return;
+    }
+    if (frontRef.current === savedFront && frontUrl) return;
+    frontRef.current = savedFront;
+    setFrontFile(savedFront);
+    const next = URL.createObjectURL(savedFront);
+    setFrontUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return next;
+    });
+  }, [savedFront, frontUrl]);
+
+  useEffect(() => {
+    if (!savedBack) {
+      if (backRef.current || backUrl) {
+        backRef.current = null;
+        setBackFile(null);
+        setBackUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return "";
+        });
+      }
+      return;
+    }
+    if (backRef.current === savedBack && backUrl) return;
+    backRef.current = savedBack;
+    setBackFile(savedBack);
+    const next = URL.createObjectURL(savedBack);
+    setBackUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return next;
+    });
+  }, [savedBack, backUrl]);
 
   useEffect(() => {
     const el = frameRef.current;
@@ -248,30 +313,110 @@ export function IdWorkbench({
     drag.current = null;
   }
 
+  function clearSide(side: "front" | "back") {
+    setErr("");
+    setFace(false);
+    if (side === "front") {
+      setFrontFile(null);
+      frontRef.current = null;
+      onSavedFront?.(null);
+      setFrontPiece(null);
+      setFrontUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return "";
+      });
+      setFrontPortion((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return "";
+      });
+      setPhotoPreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return "";
+      });
+      setFrontLens(FRONT_LENS);
+      setPhoto(FACE);
+      onClearCard?.();
+      setView(backRef.current || backUrl ? "back" : "front");
+    } else {
+      setBackFile(null);
+      backRef.current = null;
+      onSavedBack?.(null);
+      setBackPiece(null);
+      setBackUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return "";
+      });
+      setBackPortion((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return "";
+      });
+      setBackLens(BACK_LENS);
+      setView(frontRef.current || frontUrl ? "front" : "back");
+    }
+  }
+
+  function moveBackToFront() {
+    const piece = backRef.current || backFile;
+    const pieceUrl = backUrl;
+    if (!piece || !pieceUrl) return;
+    setErr("");
+    setFrontFile(piece);
+    frontRef.current = piece;
+    onSavedFront?.(piece);
+    setFrontUrl((prev) => {
+      if (prev && prev !== pieceUrl) URL.revokeObjectURL(prev);
+      return pieceUrl;
+    });
+    setFrontLens(FRONT_LENS);
+    setBackFile(null);
+    backRef.current = null;
+    onSavedBack?.(null);
+    setBackUrl("");
+    setBackPiece(null);
+    setBackPortion((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return "";
+    });
+    setBackLens(BACK_LENS);
+    onCard(piece);
+    setFace(false);
+    setView("front");
+  }
+
   async function cropSide(side: "front" | "back") {
     setErr("");
     try {
-      const lensBox = side === "front" ? FRONT_LENS : BACK_LENS;
+      // First cut always fills Front if Front is still empty — Crop back must not wipe Front.
+      const target: "front" | "back" = side === "back" && !frontRef.current ? "front" : side;
+      const lensBox = target === "front" ? FRONT_LENS : BACK_LENS;
       const cropped = await cutFile(file, card);
       const nextUrl = URL.createObjectURL(cropped);
-      if (side === "front") {
+      if (target === "front") {
+        const prevFront = frontRef.current;
         setFrontFile(cropped);
+        frontRef.current = cropped;
+        onSavedFront?.(cropped);
         setFrontLens(lensBox);
         setFrontUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
           return nextUrl;
         });
         onCard(cropped);
+        // Keep Back untouched when (re)cropping Front.
+        void prevFront;
       } else {
         setBackFile(cropped);
+        backRef.current = cropped;
+        onSavedBack?.(cropped);
         setBackLens(lensBox);
         setBackUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
           return nextUrl;
         });
+        // Front stays in frontRef / frontUrl — never cleared here.
       }
       setFace(false);
-      setView(side);
+      setView(target);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -341,34 +486,58 @@ export function IdWorkbench({
     <div className="idw">
       <section className="idw-panel">
         <div className="idw-frame" ref={frameRef}>
-          <div className="idw-view" ref={viewRef}>
-            {url && (
-              <div
-                ref={sheetRef}
-                className="idw-canvas"
-                style={{ width: pictureWidth + "px" }}
-                onPointerMove={onMove}
-                onPointerUp={onUp}
-                onPointerCancel={onUp}
-              >
-                <img
-                  ref={imgRef}
-                  src={url}
-                  alt="Uploaded photo"
-                  draggable={false}
-                  style={{ width: pictureWidth + "px", maxWidth: "none", height: "auto" }}
-                  onLoad={(e) => placeFromImage(e.currentTarget)}
-                />
-                <div className="idw-box idw-cardbox on" style={pct(card)} onPointerDown={(e) => onDown(e, "card", "", sheetRef.current)}>
-                  <em className="idw-tag">
-                    <i>Card</i>
-                  </em>
-                  {HANDLES.map((edge) => (
-                    <span key={edge} className={edge} onPointerDown={(e) => onDown(e, "card", edge, sheetRef.current)} />
-                  ))}
+          <div className="idw-sheetwrap">
+            <div className="idw-view" ref={viewRef}>
+              {onRemovePhoto && url ? (
+                <div className="idw-clear-bar">
+                  <button
+                    type="button"
+                    className="idw-clear idw-clear-sheet"
+                    aria-label="Remove photo"
+                    title="Remove photo — upload again"
+                    disabled={busy}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onRemovePhoto();
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
-              </div>
-            )}
+              ) : null}
+              {url && (
+                <div
+                  ref={sheetRef}
+                  className="idw-canvas"
+                  style={{ width: pictureWidth + "px" }}
+                  onPointerMove={onMove}
+                  onPointerUp={onUp}
+                  onPointerCancel={onUp}
+                >
+                  <img
+                    ref={imgRef}
+                    src={url}
+                    alt="Uploaded photo"
+                    draggable={false}
+                    style={{ width: pictureWidth + "px", maxWidth: "none", height: "auto" }}
+                    onLoad={(e) => placeFromImage(e.currentTarget)}
+                  />
+                  <div className="idw-box idw-cardbox on" style={pct(card)} onPointerDown={(e) => onDown(e, "card", "", sheetRef.current)}>
+                    <em className="idw-tag">
+                      <i>Card</i>
+                    </em>
+                    {HANDLES.map((edge) => (
+                      <span key={edge} className={edge} onPointerDown={(e) => onDown(e, "card", edge, sheetRef.current)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="idw-bar">
@@ -379,19 +548,114 @@ export function IdWorkbench({
             Crop back
           </button>
         </div>
+        <p className="idw-hint">Crop front → Front stays. Crop back → Back stays. Upload again only changes the top photo — Front / Back cuts are kept.</p>
+        <div className="idw-pair idw-pair-always">
+          <div className={"idw-slot" + (view === "front" && frontUrl ? " on" : "")}>
+            <button
+              type="button"
+              className={"idw-pick" + (view === "front" && frontUrl ? " on" : "")}
+              disabled={!frontUrl}
+              onClick={() => {
+                if (!frontUrl) return;
+                setView("front");
+                setFace(false);
+              }}
+            >
+              {frontUrl ? <img src={frontUrl} alt="Front of the ID" /> : <em>Front</em>}
+              <span>Front{frontUrl ? " · kept" : ""}</span>
+            </button>
+            {frontUrl ? (
+              <button
+                type="button"
+                className="idw-clear"
+                aria-label="Clear front crop"
+                title="Clear front — crop again"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  clearSide("front");
+                }}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+          <div className={"idw-slot" + (view === "back" && backUrl ? " on" : "")}>
+            <button
+              type="button"
+              className={"idw-pick" + (view === "back" && backUrl ? " on" : "")}
+              disabled={!backUrl}
+              onClick={() => {
+                if (!backUrl) return;
+                setView("back");
+                setFace(false);
+              }}
+            >
+              {backUrl ? <img src={backUrl} alt="Back of the ID" /> : <em>Back</em>}
+              <span>Back{backUrl ? " · kept" : ""}</span>
+            </button>
+            {backUrl ? (
+              <button
+                type="button"
+                className="idw-clear"
+                aria-label="Clear back crop"
+                title="Clear back — crop again"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  clearSide("back");
+                }}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {backUrl && !frontUrl ? (
+          <div className="idw-bar">
+            <button type="button" className="btn" disabled={busy} onClick={moveBackToFront}>
+              Move to Front
+            </button>
+            <span className="idw-hint" style={{ margin: 0 }}>
+              Front is empty — this cut stays in Front so Crop back will not remove it.
+            </span>
+          </div>
+        ) : null}
+        {onReplace && (
+          <div className="idw-bar idw-bar-again">
+            <button type="button" className="btn sec" disabled={busy} onClick={() => replaceRef.current?.click()}>
+              Upload again
+            </button>
+            <input
+              ref={replaceRef}
+              className="sr-only"
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                const list = Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/"));
+                e.target.value = "";
+                if (list.length) onReplace(list);
+              }}
+            />
+            {onRemovePhoto && (
+              <button type="button" className="btn ghost" disabled={busy} onClick={() => onRemovePhoto()}>
+                Remove photo
+              </button>
+            )}
+          </div>
+        )}
         {(frontUrl || backUrl) && (
           <div className="idw-work">
             <div>
-              <div className="idw-pair">
-                <button type="button" className={view === "front" ? "on" : ""} disabled={!frontUrl} onClick={() => { setView("front"); setFace(false); }}>
-                  {frontUrl ? <img src={frontUrl} alt="Front of the ID" /> : <em>Front</em>}
-                  <span>Front</span>
-                </button>
-                <button type="button" className={view === "back" ? "on" : ""} disabled={!backUrl} onClick={() => { setView("back"); setFace(false); }}>
-                  {backUrl ? <img src={backUrl} alt="Back of the ID" /> : <em>Back</em>}
-                  <span>Back</span>
-                </button>
-              </div>
               {cropUrl && (
                 <div className="idw-view">
                   <div
@@ -432,7 +696,7 @@ export function IdWorkbench({
                   </button>
                 )}
                 {view === "front" && !face && (
-                  <button type="button" className="btn sec" onClick={() => setFace(true)}>
+                  <button type="button" className="btn sec" disabled={!frontUrl} onClick={() => setFace(true)}>
                     Crop face
                   </button>
                 )}

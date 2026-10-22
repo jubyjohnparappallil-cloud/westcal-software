@@ -16,6 +16,7 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
   const no = c.certificateNo;
   const fit = j.companyFit === "shrink" ? "shrink" : "same";
   const specialFit = j.specialCompanyFit === "shrink" || j.specialCompanyFit === "same" ? j.specialCompanyFit : fit;
+  const signature = j.certificateSignature === "2" || j.certificateSignature === "3" ? j.certificateSignature : "1";
   async function setFit(next: "same" | "shrink") {
     if (next === fit) return;
     await api("PATCH", `/api/training/${j.id}`, { companyFit: next });
@@ -24,6 +25,11 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
   async function setSpecialFit(next: "same" | "shrink") {
     if (next === specialFit) return;
     await api("PATCH", `/api/training/${j.id}`, { specialCompanyFit: next });
+    onChanged();
+  }
+  async function setSignature(next: "1" | "2" | "3") {
+    if (next === signature) return;
+    await api("PATCH", `/api/training/${j.id}`, { certificateSignature: next });
     onChanged();
   }
   return (
@@ -49,6 +55,19 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
       <button className={"btn sm " + (fit === "shrink" ? "dark" : "sec")} onClick={() => void setFit("shrink")}>
         Shrink
       </button>
+      {(["1", "2", "3"] as const).map((n) => (
+        <button
+          key={n}
+          type="button"
+          className={"btn sm " + (signature === n ? "dark" : "sec")}
+          title={`Authorised signature ${n}`}
+          onClick={() => void setSignature(n)}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+        >
+          Signature {n}
+          <img src={`/certificate-signature-${n}.png?v=20261022s2`} alt="" style={{ height: 18, maxWidth: 56, objectFit: "contain" }} />
+        </button>
+      ))}
       {perms.canIssueCerts() && (
         <>
           <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, no)}>
@@ -94,7 +113,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
   return (
     <>
       <p className="hint">
-        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate. <b>Same size</b> keeps a long company name as large as the trainee name. <b>Shrink</b> makes that long name smaller. Choose one, then download again.
+        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate. <b>Same size</b> keeps a long company name as large as the trainee name. <b>Shrink</b> makes that long name smaller. <b>Signature 1</b>, <b>Signature 2</b> and <b>Signature 3</b> pick which authorised signature prints on the old and new certificates. Choose one, then download again.
         {perms.canIssueCerts() && (
           <>
             {" "}
@@ -152,7 +171,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
                     </td>
                     <td>
                       {c.name}
-                      <div className="muted">{j.certificateUnder || c.company || ""}</div>
+                      <div className="muted">{c.company || j.customerName || ""}</div>
                     </td>
                     <td>{c.course}</td>
                     <td>{c.trainingDate}</td>

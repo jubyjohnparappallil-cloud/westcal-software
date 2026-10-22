@@ -17,6 +17,7 @@ export const CERTIFICATE_ACHIEVEMENT_BLANK_PRINT = join(__dirname, "..", "..", "
 export const CERTIFICATE_DESIGNS_DIR = join(__dirname, "..", "..", "ui", "certificates");
 const LOGO = join(__dirname, "..", "..", "ui", "logo.jpg");
 const CERTIFICATE_MARKS = join(__dirname, "..", "..", "ui", "certificate-marks.png");
+const UI_DIR = join(__dirname, "..", "..", "ui");
 const marksPng = (() => {
   try {
     return readFileSync(CERTIFICATE_MARKS);
@@ -25,6 +26,39 @@ const marksPng = (() => {
   }
 })();
 let artworkCache: Promise<Buffer | null> | null = null;
+
+/** Three authorised-by signatures the office can pick for a job. */
+export type CertificateSignatureChoice = "1" | "2" | "3";
+
+export function normalizeCertificateSignature(value: unknown): CertificateSignatureChoice {
+  const v = String(value ?? "1").trim();
+  return v === "2" || v === "3" ? v : "1";
+}
+
+export function certificateSignaturePath(choice: unknown): string {
+  return join(UI_DIR, `certificate-signature-${normalizeCertificateSignature(choice)}.png`);
+}
+
+export function certificateSignatureUrl(choice: unknown): string {
+  const n = normalizeCertificateSignature(choice);
+  return `/certificate-signature-${n}.png?v=20261022s2`;
+}
+
+export function readCertificateSignature(choice: unknown): Buffer | null {
+  try {
+    return readFileSync(certificateSignaturePath(choice));
+  } catch {
+    try {
+      return readFileSync(join(UI_DIR, `certificate-signature-${normalizeCertificateSignature(choice)}.jpg`));
+    } catch {
+      try {
+        return readFileSync(join(UI_DIR, "certificate-signature.png"));
+      } catch {
+        return null;
+      }
+    }
+  }
+}
 
 export const BUILTIN_CERTIFICATE_DESIGNS = [
   { id: "achievement", name: "Westcal Achievement", preview: "/certificate-achievement.png" },
@@ -94,7 +128,8 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
     eid: c.idOrVisaNo || trainee?.idOrVisaNo || "",
     idDocument: (c.idDocument || trainee?.idDocument) === "passport" ? "passport" : "eid",
     company: (() => {
-      const pick = [trainee?.company, c.company, job.certificateUnder, job.customerName]
+      // Employed by from the ID / trainee — never job.certificateUnder (Certified to).
+      const pick = [trainee?.company, c.company, job.customerName]
         .map((v) => String(v || "").trim())
         .find((v) => v.length > 2);
       return pick || "";
@@ -108,6 +143,7 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
     expiresOn: c.expiresOn,
     authorizedBy: job.authorizedBy || job.assigneeName || job.trainerName || "",
     authorizedSignature: job.trainerSignature || "",
+    signatureChoice: normalizeCertificateSignature(job.certificateSignature),
     traineeSignature: trainee?.signature || "",
     photoDataUrl: trainee?.photoDataUrl || trainee?.extraPhotoDataUrl || "",
     qrDataUrl: c.qrDataUrl || "",
@@ -279,7 +315,7 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 .meta-col span{display:inline-block;min-width:13.5cqi;vertical-align:top}
 .employer{font-size:0.92em;line-height:1.2}
 .auth{position:absolute;left:15%;top:77%;width:22%;text-align:left;font-weight:700;font-style:italic;letter-spacing:.8px;font-size:14px;font-size:1.6cqi}
-.auth-sign{position:absolute;left:14%;top:79.4%;width:24%;height:5.4%;object-fit:contain;object-position:left center;z-index:3}
+.auth-sign{position:absolute;left:14%;top:79.2%;width:26%;height:5.8%;object-fit:contain;object-position:left center;z-index:3;background:transparent;mix-blend-mode:multiply}
 .auth-seal{position:absolute;left:39%;top:77.4%;width:13%;height:auto;object-fit:contain;z-index:3}
 .contact{position:absolute;left:9%;top:84.8%;width:24%;text-align:left;font-weight:700;font-size:11px;font-size:1.12cqi;line-height:1.15;color:#16325c}
 .qr{position:absolute;right:22%;top:75%;width:16%;background:#fff;padding:6px;box-sizing:border-box;z-index:4}
@@ -303,7 +339,7 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
     <div><span>Expiry Date</span> ${esc(formatCertDate(s.expiresOn))}</div>
   </div>
   <div class="auth">AUTHORISED BY</div>
-  <img class="auth-sign" src="/certificate-signature.png?v=20261017s" alt="Authorized signature">
+  <img class="auth-sign" src="${certificateSignatureUrl(s.signatureChoice)}" alt="Authorized signature">
   <img class="auth-seal" src="/certificate-company-seal.png?v=20261017s" alt="Westcal seal">
   <div class="contact">Westcal Instrumentation and Calibration<br>Services LLC<br>Morocco Cluster, International City,<br>Dubai, UAE.<br>info@westcal.ae<br>+971566654326 &amp; +97145762773.<br>https://westcal.ae/</div>
   ${ref ? `<div class="qr"><img src="/verify/${ref}/qr.png" alt="Scan to verify"></div>` : ""}
@@ -452,10 +488,13 @@ function drawPrintedCertificate(
 
   doc.fillColor(navy).font("Times-BoldItalic").fontSize(9)
     .text("AUTHORISED BY", px(118), py(798), { width: px(130), align: "left", characterSpacing: 0.6, lineBreak: false });
-  try {
-    const sign = readFileSync(join(__dirname, "..", "..", "ui", "certificate-signature.png"));
-    doc.image(sign, px(112), py(822), { fit: [px(160), py(42)] });
-  } catch { /* signature optional */ }
+  const sign = readCertificateSignature(s.signatureChoice);
+  if (sign) {
+    try {
+      // Wide pen mark; fit keeps the real shape so it stays sharp.
+      doc.image(sign, px(112), py(816), { fit: [px(168), py(40)] });
+    } catch { /* signature optional */ }
+  }
   try {
     const seal = readFileSync(join(__dirname, "..", "..", "ui", "certificate-company-seal.png"));
     doc.image(seal, px(300), py(792), { fit: [px(78), py(78)] });

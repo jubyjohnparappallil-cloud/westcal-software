@@ -314,6 +314,8 @@ export interface TrainingJob {
   companyFit?: "same" | "shrink";
   /** Same choice for the special certificate only. */
   specialCompanyFit?: "same" | "shrink";
+  /** Which of the three authorised signatures prints on old and new certificates. */
+  certificateSignature?: "1" | "2" | "3";
   /** Public join link token sent to trainees (no login). */
   traineeInviteToken?: string;
   /** Optional supporting files such as invoice, quotation, LPO or report. */
@@ -544,6 +546,7 @@ export interface CreateTrainingInput {
   companyScale?: number;
   companyFit?: "same" | "shrink";
   specialCompanyFit?: "same" | "shrink";
+  certificateSignature?: "1" | "2" | "3";
 }
 
 /** A notification for the mobile/side app (e.g. "job assigned to you"). */
@@ -1054,6 +1057,11 @@ export class TrainingService {
       companyScale: patch.companyScale !== undefined ? clampStoredCompanyScale(patch.companyScale) : job.companyScale,
       companyFit: patch.companyFit !== undefined ? (patch.companyFit === "shrink" ? "shrink" : "same") : job.companyFit,
       specialCompanyFit: patch.specialCompanyFit !== undefined ? (patch.specialCompanyFit === "shrink" ? "shrink" : "same") : job.specialCompanyFit,
+      certificateSignature: patch.certificateSignature !== undefined
+        ? (String(patch.certificateSignature) === "2" || String(patch.certificateSignature) === "3"
+          ? String(patch.certificateSignature) as "2" | "3"
+          : "1")
+        : job.certificateSignature,
       lineItems: patch.lineItems ?? job.lineItems,
     });
     if (job.serviceType === "Mapping" && (patch.mappingType !== undefined || patch.mappingRange !== undefined)) {
@@ -1542,7 +1550,8 @@ export class TrainingService {
     if (issued) {
       this.refreshIssuedCertificates(job, {
         dates: input.trainingDate !== undefined || input.trainingDateTo !== undefined,
-        company: input.certifiedBy !== undefined || input.certificateUnder !== undefined,
+        // Certified to must not overwrite Employed by on certificates / ID cards.
+        company: false,
       });
     }
     // Temporarily commented out due to TypeScript inference issue
@@ -1878,8 +1887,8 @@ export class TrainingService {
         cert.trainingDate = job.trainingDate;
         cert.expiresOn = addOneYear(job.trainingDate);
       }
-      if (opts.company && job.certificateUnder) {
-        cert.company = job.certificateUnder;
+      if (opts.company && attendee?.company) {
+        cert.company = attendee.company.trim();
       }
     }
   }

@@ -1389,6 +1389,18 @@ td.row-actions .btn {
   font-size: 12px;
   font-size: 1.6cqi;
 }
+.west-cert .auth-sign {
+  position: absolute;
+  left: 14%;
+  top: 79.2%;
+  width: 26%;
+  height: 5.8%;
+  object-fit: contain;
+  object-position: left center;
+  z-index: 3;
+  background: transparent;
+  mix-blend-mode: multiply;
+}
 .west-cert .contact {
   position: absolute;
   left: 9%;

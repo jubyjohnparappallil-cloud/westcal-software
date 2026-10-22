@@ -15,7 +15,11 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
   const attendee = (j.attendees || []).find((a) => a.id === c.attendeeId);
   const photo = attendee && (attendee.photoDataUrl || attendee.extraPhotoDataUrl);
   const design = j.certificateDesign || "achievement";
-  const employer = j.certificateUnder || c.company || j.customerName || "-";
+  // Employed by = ID / trainee employer. Certified to is a separate job field.
+  const employer =
+    [attendee?.company, c.company, j.customerName]
+      .map((v) => String(v || "").trim())
+      .find((v) => v.length > 2) || "-";
   const employerFont = employerTextSize(employer, j.companyScale, j.companyFit);
   return (
     <div className={`west-cert design-${design}`}>
@@ -52,6 +56,11 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
         </div>
       </div>
       <div className="auth">AUTHORISED BY</div>
+      <img
+        className="auth-sign"
+        src={`/certificate-signature-${j.certificateSignature === "2" || j.certificateSignature === "3" ? j.certificateSignature : "1"}.png?v=20261022s2`}
+        alt="Authorized signature"
+      />
       <div className="contact">
         Westcal Instrumentation and Calibration
         <br />

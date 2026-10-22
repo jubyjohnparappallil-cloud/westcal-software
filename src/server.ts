@@ -259,7 +259,7 @@ function imagePixelSize(buf: Buffer): { w: number; h: number } | null {
   return null;
 }
 
-/** Print the whole photo in its own shape. A wide Emirates ID uses only the face. */
+/** Print the face only. Wide Emirates ID crops below the “Resident Identity Card” title. */
 function drawIdPhoto(doc: PDFDocument, buf: Buffer, photoX: number, photoY: number, photoW: number, photoH: number): void {
   const size = imagePixelSize(buf);
   const idCard = size && size.w > size.h * 1.15;
@@ -267,24 +267,24 @@ function drawIdPhoto(doc: PDFDocument, buf: Buffer, photoX: number, photoY: numb
   doc.rect(photoX, photoY, photoW, photoH).fill("#ffffff");
   doc.rect(photoX, photoY, photoW, photoH).clip();
   if (idCard && size) {
-    const fx = 0.05;
-    const fy = 0.22;
-    const fw = 0.26;
-    const fh = 0.52;
+    // Face band on the left — skip header letters above the portrait.
+    const fx = 0.03;
+    const fy = 0.32;
+    const fw = 0.27;
+    const fh = 0.45;
     const regionW = size.w * fw;
     const regionH = size.h * fh;
-    const scale = Math.min(photoW / regionW, photoH / regionH);
+    const scale = Math.max(photoW / regionW, photoH / regionH);
     const dx = photoX + (photoW - regionW * scale) / 2 - fx * size.w * scale;
     const dy = photoY + (photoH - regionH * scale) / 2 - fy * size.h * scale;
     doc.image(buf, dx, dy, { width: size.w * scale, height: size.h * scale });
   } else {
     const img = doc.openImage(buf);
-    const cover = Math.max(photoW / img.width, photoH / img.height);
-    const scale = cover * 0.9;
+    const scale = Math.max(photoW / img.width, photoH / img.height);
     const dw = img.width * scale;
     const dh = img.height * scale;
     const dx = photoX + (photoW - dw) / 2;
-    const dy = photoY;
+    const dy = photoY + (photoH - dh) / 2;
     doc.image(buf, dx, dy, { width: dw, height: dh });
   }
   doc.restore();
@@ -319,123 +319,134 @@ async function sendTrainingCardPdf(
     return;
   }
 
-  const navy = "#1e4b8f";
-  const ink = "#243044";
+  // New ID card only — old ID card PDF is unchanged. Style a bit like old: left rows, navy title name.
+  const navy = "#0b2d5c";
+  const blue = "#1e4b8f";
   const labelInk = "#5a6874";
+  const valueInk = "#152238";
   try { doc.image(logo, 262, 4, { fit: [172, 62], align: "right" }); } catch { /* logo optional */ }
 
+  const whiteLeft = 108;
   const photoW = 68;
-  const photoH = 90;
+  const photoH = 82;
   const photoX = 362;
-  const photoY = 112;
-  const textLeft = W * 0.24;
-  const textRight = photoX - 10;
-  const textW = textRight - textLeft;
+  const photoY = 168;
+  const textLeft = whiteLeft;
+  const textRight = photoX - 12;
+  const labelX = textLeft;
+  const valueX = textLeft + 108;
+  const valueW = textRight - valueX;
+
+  // Thinner gold bar than the blank art (art is ~20pt; we keep ~9pt full height).
+  const artGoldW = 20;
+  const goldW = 9;
+  const gold = "#e1a730";
+  // Cover the extra art gold so only the thin bar remains.
+  doc.rect(W - artGoldW, 0, artGoldW - goldW, H).fill("#ffffff");
+  const wipeRight = W - goldW;
+  doc.rect(240, photoY - 4, Math.max(0, wipeRight - 240), H - (photoY - 4)).fill("#ffffff");
+
+  // Compact address in the top white area only (right of the blue curve).
+  const addressLines = [
+    "Westcal Instrumentation and Calibration Services LLC",
+    "Morocco Cluster, International City, Dubai, UAE",
+    "+971 56 665 4326 · +971 4 576 2773 · training@westcal.ae",
+  ];
+  doc.font("Helvetica-Bold");
+  let addrSize = 6.8;
+  const widest = addressLines.reduce((a, b) => (a.length >= b.length ? a : b));
+  while (addrSize > 6 && doc.fontSize(addrSize).widthOfString(widest) > 230) addrSize -= 0.15;
+  const addrLineH = addrSize + 1.2;
+  doc.fillColor("#3a4654").font("Helvetica-Bold").fontSize(addrSize);
+  addressLines.forEach((line, i) => {
+    doc.text(line, whiteLeft, 10 + i * addrLineH, { width: 230, align: "left", height: addrLineH, lineBreak: false });
+  });
+
+  // Name as title — larger navy blue (like old card emphasis, left-aligned).
   const name = (c.name || "").toUpperCase();
   doc.font("Helvetica-Bold");
-  let nameSize = 12;
-  const nameW = 230;
-  const nameLeft = (W - nameW) / 2;
-  while (nameSize > 7 && doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "center" }) > nameSize * 2.2) {
+  let nameSize = 13;
+  const nameW = textRight - textLeft;
+  while (nameSize > 8 && doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "left" }) > nameSize * 2.5) {
     nameSize -= 0.25;
   }
-  const nameY = 84;
-  const nameHeight = doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "center" }) + 2;
-  doc.fillColor(ink).font("Helvetica-Bold").fontSize(nameSize);
-  doc.text(name, nameLeft, nameY, { width: nameW, align: "center", lineGap: 1, height: nameHeight });
+  const nameY = 72;
+  const nameHeight = doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "left" }) + 2;
+  doc.fillColor(navy).font("Helvetica-Bold").fontSize(nameSize);
+  doc.text(name, textLeft, nameY, { width: nameW, align: "left", lineGap: 1, height: nameHeight });
+
+  // Course title — medium blue, under the name.
   const trade = (c.course || "").trim();
   doc.font("Helvetica-Bold");
-  let tradeSize = 14;
-  while (tradeSize > 10 && doc.fontSize(tradeSize).widthOfString(trade) > textW) tradeSize -= 0.5;
-  const nameBottom = nameY + nameHeight;
-  const tradeY = Math.max(H * 0.35, nameBottom + 4);
-  doc.fillColor(ink).font("Helvetica-Bold").fontSize(tradeSize)
-    .text(trade, textLeft, tradeY, { width: textW, align: "center", height: tradeSize + 4 });
+  let tradeSize = 11;
+  while (tradeSize > 8 && doc.fontSize(tradeSize).widthOfString(trade) > nameW) tradeSize -= 0.35;
+  const tradeY = nameY + nameHeight + 3;
+  doc.fillColor(blue).font("Helvetica-Bold").fontSize(tradeSize)
+    .text(trade, textLeft, tradeY, { width: nameW, align: "left", height: tradeSize + 3, lineBreak: false });
 
-  const company = [job.certificateUnder, c.company, trainee?.company, job.customerName]
+  // Detail rows — always include Training Date, Expires On, Certificate No (beside photo if needed).
+  const company = [trainee?.company, c.company, job.customerName]
     .map((name) => (name || "").trim())
     .find((name) => name.length > 1) || "";
   const rows: Array<[string, string]> = [
+    ["Employed by", company],
+    ["Training Date", classicCardDate(c.trainingDate)],
+    ["Expires On", classicCardDate(c.expiresOn)],
     ["Certificate No", c.certificateNo || ""],
-    ["Company", company],
-    ["Training Date", c.trainingDate || ""],
-    ["Expires on", c.expiresOn || ""],
   ];
-  const labelSize = 11;
-  const colonW = 14;
-  doc.font("Helvetica-Bold").fontSize(labelSize);
-  const labelW = Math.ceil(doc.widthOfString("Certificate No")) + 8;
-  const valueX = textLeft + labelW + colonW;
-  const valueW = textRight - valueX;
-  let y = Math.max(H * 0.47, tradeY + tradeSize + 10);
+  const labelSize = 10;
+  const colonW = 10;
+  let y = tradeY + tradeSize + 10;
+  // Rows may sit left of the photo; stop above the QR.
+  const detailBottom = 228;
+  const rowGap = 14;
   for (const [label, value] of rows) {
-    doc.font("Helvetica-Bold").fontSize(labelSize).fillColor(ink);
-    const rowLabelW = label === "Company" ? Math.ceil(doc.widthOfString("Company")) + 6 : labelW;
-    const rowValueX = textLeft + rowLabelW + colonW;
-    const rowValueW = (label === "Company" ? photoX - 14 : textRight) - rowValueX;
-    const size = labelSize;
-    let companyLines = 1;
-    if (label === "Company") {
-      doc.font("Helvetica-Bold").fontSize(size);
-      if (doc.widthOfString(value) > rowValueW) companyLines = 2;
+    doc.font("Helvetica-Bold").fontSize(labelSize);
+    let lines = 1;
+    if (doc.widthOfString(value) > valueW) lines = 2;
+    const rowH = lines === 2 ? Math.min(26, doc.heightOfString(value, { width: valueW }) + 1) : 12;
+    if (y + rowH > detailBottom) {
+      // Still force the three date/cert fields onto the card.
+      if (label === "Employed by") continue;
+      y = Math.min(y, detailBottom - rowH);
     }
-    const rowH = companyLines === 2 ? doc.font("Helvetica-Bold").fontSize(size).heightOfString(value, { width: rowValueW }) + 1 : 14;
-    doc.font("Helvetica").fontSize(labelSize).fillColor(labelInk)
-      .text(label, textLeft, y, { width: rowLabelW, height: 14, lineBreak: false });
-    doc.text(":", textLeft + rowLabelW, y, { width: colonW, height: 14, lineBreak: false });
-    doc.font("Helvetica-Bold").fontSize(size).fillColor(ink).text(value, rowValueX, y + (companyLines === 1 ? (labelSize - size) * 0.15 : 0), {
-      width: rowValueW,
+    doc.font("Helvetica-Bold").fontSize(labelSize).fillColor(labelInk)
+      .text(label, labelX, y, { width: valueX - labelX - colonW, height: 14, lineBreak: false });
+    doc.text(":", valueX - colonW, y, { width: colonW, height: 14, lineBreak: false });
+    doc.font("Helvetica-Bold").fontSize(labelSize).fillColor(valueInk).text(value, valueX, y, {
+      width: valueW,
       height: rowH,
-      lineBreak: companyLines === 2,
+      lineBreak: lines === 2,
     });
-    y += companyLines === 2 ? Math.max(16, rowH + 2) : 16;
+    y += lines === 2 ? Math.max(rowGap, rowH + 2) : rowGap;
   }
 
+  // Clean white under the photo frame (never into the gold bar), then face only.
+  const photoWipeW = Math.min(photoW + 4, wipeRight - (photoX - 2));
+  doc.rect(photoX - 2, photoY - 2, Math.max(0, photoWipeW), photoH + 4).fill("#ffffff");
   const photoSrc = trainee?.photoDataUrl || trainee?.extraPhotoDataUrl || "";
   if (photoSrc) {
     try { drawIdPhoto(doc, dataUrlBuffer(photoSrc), photoX, photoY, photoW, photoH); } catch { /* photo skipped */ }
   }
-  doc.rect(photoX, photoY, photoW, photoH).lineWidth(1.8).strokeColor("#d4a017").stroke();
+  doc.rect(photoX, photoY, photoW, photoH).lineWidth(1.8).strokeColor(gold).stroke();
 
-  const qrSize = 48;
-  const qrX = 124;
-  const qrY = 216;
+  // Small QR in the lower white area (not on the blue curve).
+  const qrSize = 36;
+  const qrX = 120;
+  const qrY = 232;
   if (verifyUrl) {
     const qrPng = await QRCode.toBuffer(verifyUrl, {
       errorCorrectionLevel: "M",
       margin: 1,
-      width: 280,
+      width: 200,
       color: { dark: "#000000", light: "#ffffff" },
     });
     doc.rect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4).fill("#ffffff");
     doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
   }
-  const addressLines = [
-    "Westcal Instrumentation and",
-    "Calibration Services LLC",
-    "Morocco Cluster, International City",
-    "Dubai, UAE",
-    "+971 56 665 4326, +971 4 576 2773",
-    "training@westcal.ae",
-    "https://westcal.ae/",
-  ];
-  const addressRight = photoX + photoW - 2;
-  const addressW = 188;
-  const addressX = addressRight - addressW;
-  doc.font("Helvetica-Bold");
-  let addrSize = 8;
-  const widest = addressLines.reduce((a, b) => (a.length >= b.length ? a : b));
-  while (addrSize > 7.5 && doc.fontSize(addrSize).widthOfString(widest) > addressW) addrSize -= 0.25;
-  const lineH = addrSize + 1.7;
-  const addressY = photoY + photoH + 5;
-  doc.rect(addressX - 4, photoY + photoH - 2, addressRight - addressX + 10, H - (photoY + photoH) + 2).fill("#f7fbfd");
-  doc.fillColor("#3a4654").font("Helvetica-Bold").fontSize(addrSize);
-  const addrOpts = { width: addressW, align: "left" as const, height: lineH, lineBreak: false };
-  addressLines.forEach((line, i) => {
-    const lineY = addressY + i * lineH;
-    doc.text(line, addressX, lineY, addrOpts);
-    doc.text(line, addressX + 0.35, lineY, addrOpts);
-  });
+
+  // Gold side bar full height, same width as the blank art (top = bottom).
+  doc.rect(W - goldW, 0, goldW, H).fill(gold);
   doc.end();
 }
 
@@ -474,24 +485,27 @@ async function sendClassicCardPdf(
   const photoX = W - 18 - photoW;
   const photoY = footerY - photoH - 6;
 
-  doc.fillColor(ink).font("Helvetica-Bold").fontSize(9);
-  ["T: +971 4 576 2773", "M: +971 56 665 4326", "E: training@westcal.ae", "W: www.westcal.ae"].forEach((line, i) => {
-    const lineY = 12 + i * 13;
+  doc.fillColor(ink).font("Helvetica-Bold").fontSize(8);
+  [
+    "WESTCAL INSTRUMENTATION AND CALIBRATION SERVICES LLC",
+    "DUBAI – UNITED ARAB EMIRATES",
+    "T: +971 4 576 2773  ·  M: +971 56 665 4326",
+    "E: training@westcal.ae",
+  ].forEach((line, i) => {
+    const lineY = 8 + i * 11;
     doc.text(line, 18, lineY, { lineBreak: false });
-    doc.text(line, 18.35, lineY, { lineBreak: false });
   });
   const logoX = W - 16 - 128;
   const logoY = 6;
   const logoH = 50;
   try { doc.image(logo, logoX, logoY, { fit: [128, logoH], align: "right" }); } catch { /* logo optional */ }
 
-  const companyChoices = [trainee?.company, job.certificateUnder, c.company, job.customerName, ...(job.companies || [])]
+  const companyChoices = [trainee?.company, c.company, job.customerName, ...(job.companies || [])]
     .map((name) => (name || "").trim())
-    .filter((name) => name.length > 1)
-    .sort((a, b) => b.length - a.length);
+    .filter((name) => name.length > 1);
   const rows: Array<[string, string]> = [
     ["Name:", (c.name || "").toUpperCase()],
-    ["Company:", (companyChoices[0] || "").toUpperCase()],
+    ["Employed by:", (companyChoices[0] || "").toUpperCase()],
     ["Course:", (c.course || "").toUpperCase()],
     ["Training Date:", classicCardDate(c.trainingDate)],
     ["Expires On:", classicCardDate(c.expiresOn)],
@@ -499,9 +513,9 @@ async function sendClassicCardPdf(
   ];
   const labelX = 18;
   const valueX = 118;
-  const qrSize = 54;
-  const qrX = photoX - qrSize - 8;
-  const qrY = footerY - qrSize - 6;
+  const qrSize = 36;
+  const qrX = 18;
+  const qrY = footerY - qrSize - 4;
   const fullW = photoX - valueX - 10;
   const besideQrW = qrX - valueX - 8;
   const rowWidths = rows.map((_, index) => (index >= 2 ? besideQrW : fullW));
@@ -1109,6 +1123,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const img = await readFile(join(__dirname, "ui", name));
       res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable" });
       res.end(img);
+      return;
+    }
+    const signPick = path.match(/^\/certificate-signature-([123])\.(?:png|jpg)$/);
+    if (method === "GET" && signPick) {
+      const n = signPick[1];
+      try {
+        const img = await readFile(join(__dirname, "ui", `certificate-signature-${n}.png`));
+        res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable" });
+        res.end(img);
+      } catch {
+        const img = await readFile(join(__dirname, "ui", `certificate-signature-${n}.jpg`));
+        res.writeHead(200, { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=31536000, immutable" });
+        res.end(img);
+      }
       return;
     }
     if (method === "GET" && path === "/certificate-achievement-blank-screen.jpg") {

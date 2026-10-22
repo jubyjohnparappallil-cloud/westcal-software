@@ -47,6 +47,8 @@ export function Capture({
   const [files, setFiles] = useState<File[]>(startFiles);
   const [fileIndex, setFileIndex] = useState(0);
   const [benchKey, setBenchKey] = useState(0);
+  const [savedFront, setSavedFront] = useState<File | null>(null);
+  const [savedBack, setSavedBack] = useState<File | null>(null);
   const sourceRef = useRef<File | null>(startFiles[0] ?? null);
   const photoLock = useRef(false);
   const [reading, setReading] = useState(false);
@@ -69,9 +71,29 @@ export function Capture({
     setIdCard(null);
     setPhoto(null);
     setSharp(null);
+    setSavedFront(null);
+    setSavedBack(null);
     setFetched({ ...BLANK });
     photoLock.current = false;
     setScanBox(null);
+  }
+
+  /** New sheet photo only — keep Front / Back cuts and filled name fields. */
+  function replaceSheet(list: FileList | File[] | null | undefined) {
+    const next = Array.from(list || []).filter((f) => f.type.startsWith("image/"));
+    if (!next.length) return toast("Please choose a photo of the ID cards.");
+    setFiles(next);
+    setFileIndex(0);
+    setBenchKey((k) => k + 1);
+    sourceRef.current = next[0];
+    onBulkFiles?.(next);
+    setMode("photo");
+    setScanBox(
+      <p className="okmsg" role="status">
+        New photo loaded. Front and Back cuts were kept — crop the other side if needed.
+      </p>,
+    );
+    toast("New photo loaded. Front / Back cuts kept.");
   }
 
   function differentCard() {
@@ -79,6 +101,8 @@ export function Capture({
     setPhoto(null);
     setExtra(null);
     setSharp(null);
+    setSavedFront(null);
+    setSavedBack(null);
     setFetched({ ...BLANK });
     fill({ ...BLANK }, false);
     photoLock.current = false;
@@ -301,7 +325,7 @@ export function Capture({
           )}
           {scanFile && (
             <IdWorkbench
-              key={benchKey + ":" + fileIndex + ":" + scanFile.name}
+              key={benchKey + ":" + fileIndex + ":" + scanFile.name + ":" + scanFile.size}
               file={scanFile}
               read={fetched}
               busy={reading}
@@ -310,6 +334,33 @@ export function Capture({
               onRead={(cropped) => readLens(cropped)}
               onReadBack={(cropped) => readBackCard(cropped)}
               onEdit={(patch) => setFetched((cur) => ({ ...(cur || BLANK), ...patch }))}
+              savedFront={savedFront}
+              savedBack={savedBack}
+              onSavedFront={setSavedFront}
+              onSavedBack={setSavedBack}
+              onClearCard={() => {
+                setIdCard(null);
+                setPhoto(null);
+                setSavedFront(null);
+                photoLock.current = false;
+              }}
+              onReplace={(list) => replaceSheet(list)}
+              onRemovePhoto={() => {
+                setFiles([]);
+                setFileIndex(0);
+                sourceRef.current = null;
+                onBulkFiles?.([]);
+                setIdCard(null);
+                setPhoto(null);
+                setExtra(null);
+                setSharp(null);
+                setSavedFront(null);
+                setSavedBack(null);
+                setFetched(null);
+                setScanBox(null);
+                photoLock.current = false;
+                setBenchKey((k) => k + 1);
+              }}
             />
           )}
           {scanFile && (
@@ -320,7 +371,7 @@ export function Capture({
         </>
       )}
       {mode === "photo" &&
-        (idCard ? (
+        (idCard && !scanFile ? (
           <>
             <div className={"shots" + (dragging ? " dragover" : "")} {...dropProps} title="Drop a new ID card photo here to replace it">
               <figure className="idshot">
@@ -341,7 +392,7 @@ export function Capture({
               )}
             </div>
             <label className="btn sec" style={{ marginTop: 10 }} htmlFor="idfile2">
-              Replace from gallery
+              Upload again
             </label>
             <input
               id="idfile2"
@@ -380,6 +431,8 @@ export function Capture({
                 setPhoto(null);
                 setExtra(null);
                 setSharp(null);
+                setSavedFront(null);
+                setSavedBack(null);
                 setFetched(null);
                 setScanBox(null);
               }}
