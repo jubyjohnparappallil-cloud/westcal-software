@@ -4,7 +4,14 @@ import { fileURLToPath } from "node:url";
 import type { ServerResponse } from "node:http";
 import JSZip from "jszip";
 import QRCode from "qrcode";
-import { certificateSlots, companyNameHalfPoints, shrinkCompanyParagraph } from "./certificateTemplate.js";
+import {
+  authorizedSignatureExtent,
+  authorizedSignatureRun,
+  certificateSlots,
+  companyNameHalfPoints,
+  readCertificateSignature,
+  shrinkCompanyParagraph,
+} from "./certificateTemplate.js";
 import { printedTrNo, type TrainingCertificate, type TrainingJob } from "./training.js";
 
 const TEMPLATE = join(dirname(fileURLToPath(import.meta.url)), "templates", "qannati-certificate.docx");
@@ -18,14 +25,37 @@ function xmlEscape(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-/** 7 October 2026 becomes OCTOBER 07TH, 2026, matching the special certificate. */
-function startOn(value: string | undefined): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value ?? "").trim());
-  if (!m) return String(value ?? "").trim();
-  const day = Number(m[3]);
+/** ST / ND / RD / TH — CAPITAL letters, small + raised at the top (affirmation style). */
+function daySuffix(day: number): string {
   const teen = day % 100;
-  const suffix = teen >= 11 && teen <= 13 ? "TH" : ({ 1: "ST", 2: "ND", 3: "RD" } as Record<number, string>)[day % 10] ?? "TH";
-  return `${MONTHS[Number(m[2]) - 1]} ${String(day).padStart(2, "0")}${suffix}, ${m[1]}`;
+  if (teen >= 11 && teen <= 13) return "TH";
+  return ({ 1: "ST", 2: "ND", 3: "RD" } as Record<number, string>)[day % 10] ?? "TH";
+}
+
+/**
+ * Fills only {{START}} (keeps "START ON THIS" and the rest of the template).
+ * Like the sample: OCTOBER 01ˢᵀ, 2026 — day 01/10…; only ST/ND/RD/TH is capital + small + top.
+ */
+function startTokenXml(value: string | undefined): string {
+  const raw = String(value ?? "").trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  const basePr =
+    `<w:rPr><w:rFonts w:asciiTheme="majorBidi" w:hAnsiTheme="majorBidi" w:cstheme="majorBidi"/><w:i/><w:iCs/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr>`;
+  if (!m) return xmlEscape(raw);
+  const day = Number(m[3]);
+  const month = MONTHS[Number(m[2]) - 1];
+  const year = m[1];
+  const dayText = String(day).padStart(2, "0"); // 01, 10 — same as sample
+  const suffix = daySuffix(day);
+  const superPr =
+    `<w:rPr><w:rFonts w:asciiTheme="majorBidi" w:hAnsiTheme="majorBidi" w:cstheme="majorBidi"/><w:i/><w:iCs/><w:sz w:val="16"/><w:szCs w:val="16"/><w:vertAlign w:val="superscript"/></w:rPr>`;
+  // Close the template text run, insert date + raised capital suffix + year, continue.
+  return (
+    `</w:t></w:r>` +
+    `<w:r>${basePr}<w:t>${month} ${dayText}</w:t></w:r>` +
+    `<w:r>${superPr}<w:t>${suffix}</w:t></w:r>` +
+    `<w:r>${basePr}<w:t>, ${year}`
+  );
 }
 
 /** TR 4782 and tr4782 both print as TR4782. */
@@ -59,7 +89,7 @@ export async function buildQannatiCertificateDocx(
     "{{COURSE}}": xmlEscape(s.course.toUpperCase()),
     "{{CERTNO}}": xmlEscape(s.certificateNo),
     "{{JOBNO}}": xmlEscape(specialJobNo(job)),
-    "{{START}}": xmlEscape(startOn(s.trainingDate)),
+    "{{START}}": startTokenXml(s.trainingDate),
   };
   const zip = await JSZip.loadAsync(await readFile(TEMPLATE));
   const file = zip.file("word/document.xml");
@@ -69,34 +99,53 @@ export async function buildQannatiCertificateDocx(
   xml = shrinkCompanyParagraph(xml, companyNameHalfPoints(employer, 36, specialFit, s.companyScale));
   if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "Passport No");
   for (const [token, value] of Object.entries(values)) xml = xml.replaceAll(token, value);
+
+  const relsPath = "word/_rels/document.xml.rels";
+  const ensureRel = async (id: string, target: string) => {
+    const rels = zip.file(relsPath);
+    if (!rels) return;
+    const relsXml = await rels.async("string");
+    if (relsXml.includes(`Id="${id}"`)) return;
+    zip.file(
+      relsPath,
+      relsXml.replace(
+        "</Relationships>",
+        `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${target}"/></Relationships>`,
+      ),
+    );
+  };
+  const ensureType = async (ext: string, contentType: string) => {
+    const types = zip.file("[Content_Types].xml");
+    if (!types) return;
+    const typesXml = await types.async("string");
+    if (typesXml.includes(`Extension="${ext}"`)) return;
+    zip.file(
+      "[Content_Types].xml",
+      typesXml.replace(
+        "</Types>",
+        `<Default Extension="${ext}" ContentType="${contentType}"/></Types>`,
+      ),
+    );
+  };
+
+  // Same authorised signature as old / new designs (Signature 1–3 pick).
+  const signature = readCertificateSignature(s.signatureChoice);
+  if (signature) {
+    zip.file("word/media/signature.png", signature);
+    await ensureRel("rIdSign", "media/signature.png");
+    await ensureType("png", "image/png");
+    const { cx, cy } = authorizedSignatureExtent(signature, s.signatureChoice);
+    xml = xml.replace(
+      "<w:t>Authorized By:</w:t></w:r></w:p>",
+      `<w:t>Authorized By:</w:t></w:r>${authorizedSignatureRun(cx, cy)}</w:p>`,
+    );
+  }
+
   if (verifyUrl) {
     const png = await QRCode.toBuffer(verifyUrl, { type: "png", margin: 2, width: 480, errorCorrectionLevel: "Q" });
     zip.file("word/media/qr.png", png);
-    const relsPath = "word/_rels/document.xml.rels";
-    const rels = zip.file(relsPath);
-    if (rels) {
-      const relsXml = await rels.async("string");
-      zip.file(
-        relsPath,
-        relsXml.replace(
-          "</Relationships>",
-          `<Relationship Id="rIdQr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/qr.png"/></Relationships>`,
-        ),
-      );
-    }
-    const types = zip.file("[Content_Types].xml");
-    if (types) {
-      const typesXml = await types.async("string");
-      if (!typesXml.includes('Extension="png"')) {
-        zip.file(
-          "[Content_Types].xml",
-          typesXml.replace(
-            "</Types>",
-            `<Default Extension="png" ContentType="image/png"/></Types>`,
-          ),
-        );
-      }
-    }
+    await ensureRel("rIdQr", "media/qr.png");
+    await ensureType("png", "image/png");
     const besideNumbers = `<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="-9"/>`;
     xml = xml.includes(besideNumbers)
       ? xml.replace(besideNumbers, `${QR_DRAWING}${besideNumbers}`)

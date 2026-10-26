@@ -1392,9 +1392,9 @@ td.row-actions .btn {
 .west-cert .auth-sign {
   position: absolute;
   left: 14%;
-  top: 79.2%;
-  width: 26%;
-  height: 5.8%;
+  top: 77.2%;
+  width: 24%;
+  height: 6.2%;
   object-fit: contain;
   object-position: left center;
   z-index: 3;

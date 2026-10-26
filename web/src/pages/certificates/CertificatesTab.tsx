@@ -65,7 +65,7 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
           style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
         >
           Signature {n}
-          <img src={`/certificate-signature-${n}.png?v=20261022s2`} alt="" style={{ height: 18, maxWidth: 56, objectFit: "contain" }} />
+          <img src={`/certificate-signature-${n}.png?v=20261026qr`} alt="" style={{ height: n === "2" ? 30 : 20, maxWidth: n === "2" ? 96 : 64, objectFit: "contain" }} />
         </button>
       ))}
       {perms.canIssueCerts() && (
@@ -113,11 +113,11 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
   return (
     <>
       <p className="hint">
-        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate. <b>Same size</b> keeps a long company name as large as the trainee name. <b>Shrink</b> makes that long name smaller. <b>Signature 1</b>, <b>Signature 2</b> and <b>Signature 3</b> pick which authorised signature prints on the old and new certificates. Choose one, then download again.
+        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate. <b>Same size</b> keeps a long company name as large as the trainee name. <b>Shrink</b> makes that long name smaller. <b>Signature 1</b>, <b>Signature 2</b> and <b>Signature 3</b> pick which authorised signature prints on the old, new, and special certificates. Signatures print medium size, a bit above “Authorized By,” and keep their real shape. Choose one, then download again.
         {perms.canIssueCerts() && (
           <>
             {" "}
-            <b>Special design</b> is the Qannati-style Word file. It prints the employer from the ID back and the TR job number. The <b>Same size</b> and <b>Shrink</b> buttons beside it change only that file.
+            <b>Special design</b> is the Qannati-style Word file. It prints the employer from the ID back, the TR job number, and the same authorised signature. The <b>Same size</b> and <b>Shrink</b> buttons beside it change only that file.
           </>
         )}
       </p>

@@ -58,7 +58,13 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
       <div className="auth">AUTHORISED BY</div>
       <img
         className="auth-sign"
-        src={`/certificate-signature-${j.certificateSignature === "2" || j.certificateSignature === "3" ? j.certificateSignature : "1"}.png?v=20261022s2`}
+        src={`/certificate-signature-${
+          c.certificateSignature === "2" || c.certificateSignature === "3"
+            ? c.certificateSignature
+            : j.certificateSignature === "2" || j.certificateSignature === "3"
+              ? j.certificateSignature
+              : "1"
+        }.png?v=20261026qr`}
         alt="Authorized signature"
       />
       <div className="contact">

@@ -41,7 +41,7 @@ export function certificateSignaturePath(choice: unknown): string {
 
 export function certificateSignatureUrl(choice: unknown): string {
   const n = normalizeCertificateSignature(choice);
-  return `/certificate-signature-${n}.png?v=20261022s2`;
+  return `/certificate-signature-${n}.png?v=20261026qr`;
 }
 
 export function readCertificateSignature(choice: unknown): Buffer | null {
@@ -58,6 +58,51 @@ export function readCertificateSignature(choice: unknown): Buffer | null {
       }
     }
   }
+}
+
+function pngPixelSize(buf: Buffer): { w: number; h: number } | null {
+  if (buf.length > 24 && buf[0] === 0x89 && buf[1] === 0x50) {
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  }
+  return null;
+}
+
+/**
+ * Word/PDF print size for the authorised signature.
+ * Keep the real PNG aspect (wrong height = Word stretches the ink and it looks blurry).
+ * All designs print large and clear; Signature 2 is a bit larger still.
+ */
+export function authorizedSignatureExtent(
+  buf: Buffer,
+  choice: unknown = "1",
+): { cx: number; cy: number } {
+  const size = pngPixelSize(buf);
+  const n = normalizeCertificateSignature(choice);
+  // EMU: 914400 = 1 inch. Medium print size; Signature 2 slightly larger than 1/3.
+  const targetCx = n === "2" ? 1680000 : 1500000;
+  const maxCy = n === "2" ? 950000 : 780000;
+  if (!size?.w || !size?.h) return { cx: targetCx, cy: Math.round(targetCx * 0.4) };
+  const ar = size.h / size.w;
+  let cx = targetCx;
+  let cy = Math.round(cx * ar);
+  // Never stretch: if too tall for the page, shrink width to keep the real shape.
+  if (cy > maxCy) {
+    cy = maxCy;
+    cx = Math.round(cy / ar);
+  }
+  return { cx, cy };
+}
+
+/** Float the ink next to "Authorized By:" — a bit above the line, same pen design. */
+export function authorizedSignatureRun(cx: number, cy: number): string {
+  return `<w:r><w:rPr><w:noProof/></w:rPr><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="251658240" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="character"><wp:posOffset>100000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="line"><wp:posOffset>-220000</wp:posOffset></wp:positionV><wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="21" name="Authorized signature"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="21" name="signature.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdSign"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`;
+}
+
+/** PDF fit box for the authorised signature on the new Westcal certificate. */
+export function authorizedSignaturePdfFit(choice: unknown): { w: number; h: number } {
+  // Medium clear box; Signature 2 a touch larger.
+  if (normalizeCertificateSignature(choice) === "2") return { w: 175, h: 72 };
+  return { w: 155, h: 58 };
 }
 
 export const BUILTIN_CERTIFICATE_DESIGNS = [
@@ -143,7 +188,8 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
     expiresOn: c.expiresOn,
     authorizedBy: job.authorizedBy || job.assigneeName || job.trainerName || "",
     authorizedSignature: job.trainerSignature || "",
-    signatureChoice: normalizeCertificateSignature(job.certificateSignature),
+    // Prefer the signature stamped on this certificate (QR scan must match print).
+    signatureChoice: normalizeCertificateSignature(c.certificateSignature ?? job.certificateSignature),
     traineeSignature: trainee?.signature || "",
     photoDataUrl: trainee?.photoDataUrl || trainee?.extraPhotoDataUrl || "",
     qrDataUrl: c.qrDataUrl || "",
@@ -315,7 +361,7 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 .meta-col span{display:inline-block;min-width:13.5cqi;vertical-align:top}
 .employer{font-size:0.92em;line-height:1.2}
 .auth{position:absolute;left:15%;top:77%;width:22%;text-align:left;font-weight:700;font-style:italic;letter-spacing:.8px;font-size:14px;font-size:1.6cqi}
-.auth-sign{position:absolute;left:14%;top:79.2%;width:26%;height:5.8%;object-fit:contain;object-position:left center;z-index:3;background:transparent;mix-blend-mode:multiply}
+.auth-sign{position:absolute;left:14%;top:77.2%;width:24%;height:6.2%;object-fit:contain;object-position:left center;z-index:3;background:transparent;mix-blend-mode:multiply}
 .auth-seal{position:absolute;left:39%;top:77.4%;width:13%;height:auto;object-fit:contain;z-index:3}
 .contact{position:absolute;left:9%;top:84.8%;width:24%;text-align:left;font-weight:700;font-size:11px;font-size:1.12cqi;line-height:1.15;color:#16325c}
 .qr{position:absolute;right:22%;top:75%;width:16%;background:#fff;padding:6px;box-sizing:border-box;z-index:4}
@@ -491,8 +537,9 @@ function drawPrintedCertificate(
   const sign = readCertificateSignature(s.signatureChoice);
   if (sign) {
     try {
-      // Wide pen mark; fit keeps the real shape so it stays sharp.
-      doc.image(sign, px(112), py(816), { fit: [px(168), py(40)] });
+      // Wide pen mark; fit keeps the real shape so it stays sharp. Signature 2 is a little larger.
+      const fit = authorizedSignaturePdfFit(s.signatureChoice);
+      doc.image(sign, px(112), py(816), { fit: [px(fit.w), py(fit.h)] });
     } catch { /* signature optional */ }
   }
   try {

@@ -178,6 +178,8 @@ export interface TrainingCertificate {
   qrDataUrl: string;
   barcodeDataUrl: string;
   generatedAt: Date;
+  /** Authorised signature printed on this certificate (and shown when the QR is scanned). */
+  certificateSignature?: "1" | "2" | "3";
 }
 
 export interface TrainingJob {
@@ -1064,6 +1066,11 @@ export class TrainingService {
         : job.certificateSignature,
       lineItems: patch.lineItems ?? job.lineItems,
     });
+    // Keep each certificate's QR verify page on the same signature that prints.
+    if (patch.certificateSignature !== undefined) {
+      const pick = job.certificateSignature === "2" || job.certificateSignature === "3" ? job.certificateSignature : "1";
+      for (const cert of job.certificates) cert.certificateSignature = pick;
+    }
     if (job.serviceType === "Mapping" && (patch.mappingType !== undefined || patch.mappingRange !== undefined)) {
       const mappingType = String(job.mappingType ?? "").trim();
       const mappingRange = String(job.mappingRange ?? "").trim();
@@ -1912,6 +1919,8 @@ export class TrainingService {
       qrDataUrl: qr.dataUrl,
       barcodeDataUrl: barcode.dataUrl,
       generatedAt: new Date(),
+      certificateSignature:
+        job.certificateSignature === "2" || job.certificateSignature === "3" ? job.certificateSignature : "1",
     });
   }
 
