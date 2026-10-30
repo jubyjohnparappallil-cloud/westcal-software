@@ -375,14 +375,25 @@ async function sendTrainingCardPdf(
   doc.fillColor(navy).font("Helvetica-Bold").fontSize(nameSize);
   doc.text(name, textLeft, nameY, { width: nameW, align: "left", lineGap: 1, height: nameHeight });
 
-  // Course title — medium blue, under the name.
-  const trade = (c.course || "").trim();
+  // Course title — wrap + shrink so long names (comma-joined) stay complete on the card.
+  const trade = String(c.course || "")
+    .trim()
+    .replace(/,/g, ", ")
+    .replace(/\//g, "/ ")
+    .replace(/\s+/g, " ");
   doc.font("Helvetica-Bold");
   let tradeSize = 11;
-  while (tradeSize > 8 && doc.fontSize(tradeSize).widthOfString(trade) > nameW) tradeSize -= 0.35;
+  const maxTradeH = 34;
+  while (tradeSize > 6.5 && doc.fontSize(tradeSize).heightOfString(trade, { width: nameW }) > maxTradeH) {
+    tradeSize -= 0.25;
+  }
   const tradeY = nameY + nameHeight + 3;
+  const tradeH = Math.min(
+    maxTradeH,
+    doc.fontSize(tradeSize).heightOfString(trade, { width: nameW }) + 2,
+  );
   doc.fillColor(blue).font("Helvetica-Bold").fontSize(tradeSize)
-    .text(trade, textLeft, tradeY, { width: nameW, align: "left", height: tradeSize + 3, lineBreak: false });
+    .text(trade, textLeft, tradeY, { width: nameW, align: "left", height: tradeH, lineBreak: true });
 
   // Detail rows — always include Training Date, Expires On, Certificate No (beside photo if needed).
   const company = [trainee?.company, c.company, job.customerName]
@@ -396,7 +407,7 @@ async function sendTrainingCardPdf(
   ];
   const labelSize = 10;
   const colonW = 10;
-  let y = tradeY + tradeSize + 10;
+  let y = tradeY + tradeH + 8;
   // Rows may sit left of the photo; stop above the QR.
   const detailBottom = 228;
   const rowGap = 14;
@@ -1435,6 +1446,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     if (method === "PATCH" && certificateEdit) {
       requirePerm(userId, "Certificates", "edit");
       sendJson(res, 200, await platform.training.editCertificate(certificateEdit[1], certificateEdit[2], await readBody(req)));
+      return;
+    }
+    if (method === "DELETE" && certificateEdit) {
+      requirePerm(userId, "Certificates", "edit");
+      sendJson(res, 200, platform.training.deleteCertificate(certificateEdit[1], certificateEdit[2]));
       return;
     }
     const certificatePdfMatch = path.match(/^\/api\/training\/([^/]+)\/certificates\/([^/]+)\/pdf$/);

@@ -318,6 +318,8 @@ export interface TrainingJob {
   specialCompanyFit?: "same" | "shrink";
   /** Which of the three authorised signatures prints on old and new certificates. */
   certificateSignature?: "1" | "2" | "3";
+  /** Signature 2 print size on old + special Word sheets: earlier smaller, or medium. */
+  certificateSignatureSize?: "normal" | "medium";
   /** Public join link token sent to trainees (no login). */
   traineeInviteToken?: string;
   /** Optional supporting files such as invoice, quotation, LPO or report. */
@@ -549,6 +551,7 @@ export interface CreateTrainingInput {
   companyFit?: "same" | "shrink";
   specialCompanyFit?: "same" | "shrink";
   certificateSignature?: "1" | "2" | "3";
+  certificateSignatureSize?: "normal" | "medium";
 }
 
 /** A notification for the mobile/side app (e.g. "job assigned to you"). */
@@ -1064,6 +1067,9 @@ export class TrainingService {
           ? String(patch.certificateSignature) as "2" | "3"
           : "1")
         : job.certificateSignature,
+      certificateSignatureSize: patch.certificateSignatureSize !== undefined
+        ? (String(patch.certificateSignatureSize) === "normal" ? "normal" : "medium")
+        : job.certificateSignatureSize,
       lineItems: patch.lineItems ?? job.lineItems,
     });
     // Keep each certificate's QR verify page on the same signature that prints.
@@ -1875,6 +1881,20 @@ export class TrainingService {
     }
     job.updatedAt = new Date();
     return cert;
+  }
+
+  /** Remove one issued certificate. If none remain, job returns to Submitted so it can be issued again. */
+  deleteCertificate(jobId: string, certificateId: string): TrainingJob {
+    const job = this.getJob(jobId);
+    const index = job.certificates.findIndex((c) => c.id === certificateId);
+    if (index < 0) throw new NotFoundError("certificate not found");
+    job.certificates.splice(index, 1);
+    if (!job.certificates.length && (job.status === "Issued" || job.status === "Approved")) {
+      job.status = "Submitted";
+      job.issuedAt = undefined;
+    }
+    job.updatedAt = new Date();
+    return job;
   }
 
   private refreshIssuedCertificates(

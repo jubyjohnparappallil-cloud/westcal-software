@@ -440,7 +440,7 @@ export function JobDetail({
               <button className="btn sec sm" onClick={() => downloads.card(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
                 ID card
               </button>
-              <button className="btn sec sm" onClick={() => downloads.cardClassic(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+              <button className="btn sec sm" onClick={() => downloads.cardClassic(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), j.companyFit === "shrink" ? "shrink" : "same")}>
                 Old ID card
               </button>
               <button className="btn sec sm" onClick={() => downloads.cardClassicShrink(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>

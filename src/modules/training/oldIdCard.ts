@@ -73,11 +73,30 @@ function useFace(doc: PDFKit.PDFDocument, heavy: boolean): void {
   doc.font(file || "Helvetica-Bold");
 }
 
+/** Course names often lack spaces after commas — break so wrap/shrink can fit the full title. */
+function cardCourseText(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .toUpperCase()
+    .replace(/,/g, ", ")
+    .replace(/\//g, "/ ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function wrapTokens(text: string): string[] {
+  return String(text || "")
+    .replace(/,/g, ", ")
+    .replace(/\//g, "/ ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
 /** Sample size, then a smaller size only when the words do not fit on the line. */
 function fittedSize(doc: PDFKit.PDFDocument, text: string, maxSize: number, maxW: number, heavy: boolean): number {
   useFace(doc, heavy);
   let size = maxSize;
-  const minSize = maxSize * 0.42;
+  const minSize = maxSize * 0.32;
   if (!text || maxW <= 0) return size;
   while (size > minSize && doc.fontSize(size).widthOfString(text) > maxW) size -= 0.2;
   return size;
@@ -89,12 +108,13 @@ function drawFitted(doc: PDFKit.PDFDocument, text: string, x: number, y: number,
   doc.fontSize(size).text(text, x, y + (maxSize - size) * 0.75, { lineBreak: false });
 }
 
-/** Keep the sample size and wrap onto another line when the words are too wide. */
-function wrapSameSize(doc: PDFKit.PDFDocument, text: string, maxW: number): string[] {
+/** Wrap at a given font size; breaks on spaces, commas and slashes. */
+function wrapAtSize(doc: PDFKit.PDFDocument, text: string, maxW: number, size: number): string[] {
   useFace(doc, true);
-  doc.fontSize(BODY);
-  const words = text.split(/\s+/).filter(Boolean);
-  if (!words.length || doc.widthOfString(text) <= maxW) return [text];
+  doc.fontSize(size);
+  const words = wrapTokens(text);
+  if (!words.length) return [""];
+  if (doc.widthOfString(words.join(" ")) <= maxW) return [words.join(" ")];
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
@@ -102,11 +122,60 @@ function wrapSameSize(doc: PDFKit.PDFDocument, text: string, maxW: number): stri
     if (doc.widthOfString(next) <= maxW) current = next;
     else {
       if (current) lines.push(current);
-      current = word;
+      // Hard-break an oversized token so it is never clipped off the card.
+      if (doc.widthOfString(word) > maxW) {
+        let chunk = "";
+        for (const ch of word) {
+          const tryChunk = chunk + ch;
+          if (chunk && doc.widthOfString(tryChunk) > maxW) {
+            lines.push(chunk);
+            chunk = ch;
+          } else chunk = tryChunk;
+        }
+        current = chunk;
+      } else current = word;
     }
   }
   if (current) lines.push(current);
   return lines;
+}
+
+/**
+ * Same size = sample BODY + wrap.
+ * Shrink = reduce font first (prefer 1 line, then 2) so a long course stays clear of the next row.
+ */
+function layoutField(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  maxW: number,
+  fitMode: OldCardFit,
+): { lines: string[]; size: number; lineGap: number } {
+  const value = String(text || "").trim();
+  if (fitMode !== "shrink") {
+    return { lines: wrapAtSize(doc, value, maxW, BODY), size: BODY, lineGap: BODY * 1.05 };
+  }
+  const flat = wrapTokens(value).join(" ");
+  const minSize = BODY * 0.26;
+
+  // Prefer one line at a reduced size (this is what Shrink is for).
+  const one = fittedSize(doc, flat, BODY, maxW, true);
+  useFace(doc, true);
+  if (doc.fontSize(one).widthOfString(flat) <= maxW) {
+    return { lines: [flat], size: one, lineGap: one * 1.05 };
+  }
+
+  // Then 2 lines, then 3 — always take the largest size that fits that line count.
+  // (Do not accept 3 lines at full BODY; that left Shrink looking like Same size.)
+  for (const maxLines of [2, 3]) {
+    for (let size = BODY; size >= minSize; size -= 0.15) {
+      const lines = wrapAtSize(doc, flat, maxW, size);
+      if (lines.length <= maxLines) {
+        return { lines, size, lineGap: size * 1.05 };
+      }
+    }
+  }
+  const size = minSize;
+  return { lines: wrapAtSize(doc, flat, maxW, size), size, lineGap: size * 1.05 };
 }
 
 /** Portrait box matching the sample card: head near the top, shoulders at the bottom. */
@@ -174,11 +243,11 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
     drawFitted(doc, line, u(58), u(24 + i * 23.5), CONTACT, u(280), false);
   });
 
-  // Exact old layout — label "Company:" as in the sample. Use Shrink only when a name is long.
+  // Exact old layout — label "Company:" as in the sample. Shrink also shrinks long course titles.
   const rows: Array<[string, string]> = [
     ["Name:", (fields.name || "").toUpperCase()],
     ["Company:", (fields.company || "").toUpperCase()],
-    ["Course:", (fields.course || "").toUpperCase()],
+    ["Course:", cardCourseText(fields.course)],
     ["Training Date:", formatCertDate(fields.trainingDate)],
     ["Expires On:", formatCertDate(fields.expiresOn)],
     ["Certificate No:", fields.certificateNo || ""],
@@ -196,19 +265,30 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
   const qrX = photoX - qrSize - u(14);
   const qrY = photoY + photoH - qrSize;
   const footerLimit = u(332);
-  // Same size = full BODY font (like short-name sample). Shrink option alone reduces font.
+  // Same size = full BODY + wrap. Shrink = smaller type + wrap so the full course stays on the card.
   const fitMode: OldCardFit = fields.fit === "shrink" ? "shrink" : "same";
 
   let shift = 0;
   const placed = rows.map(([label, value], i) => {
-    const y = u(tops[i]) + shift;
-    const maxW = (fields.qr && y + BODY > qrY ? qrX : photoX) - valueX - u(6);
-    const lines = fitMode === "shrink" ? [value] : wrapSameSize(doc, value, maxW);
-    if (lines.length > 1) shift += (lines.length - 1) * BODY * 0.86;
-    return { label, y, lines, maxW };
+    const base = u(tops[i]);
+    const y = base + shift;
+    // Course and rows below sit beside the photo/QR — keep width clear of the QR so wrap never clips.
+    const maxW = (fields.qr && (i >= 2 || y + BODY > qrY) ? qrX : photoX) - valueX - u(6);
+    const layout = layoutField(doc, value, maxW, fitMode);
+    const blockH =
+      layout.lines.length <= 1
+        ? layout.size
+        : (layout.lines.length - 1) * layout.lineGap + layout.size;
+    // Push later rows down when this value needs more height than the sample row gap.
+    if (i < rows.length - 1) {
+      const naturalGap = u(tops[i + 1]) - base;
+      const need = blockH + u(3);
+      if (need > naturalGap) shift += need - naturalGap;
+    }
+    return { label, y, ...layout, maxW, blockH };
   });
   const last = placed[placed.length - 1];
-  const lastBottom = last.y + last.lines.length * BODY * 0.9;
+  const lastBottom = last.y + last.blockH;
   const overflow = lastBottom - footerLimit;
   // May tighten lower rows only — never move Name above the sample gap under contacts.
   const maxUp = Math.max(0, placed[0].y - nameTop);
@@ -218,15 +298,11 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
   for (const row of placed) {
     const y = row.y - shiftUp;
     drawFitted(doc, row.label, labelX, y, BODY, valueX - labelX - u(6), true);
-    if (fitMode === "shrink") {
-      drawFitted(doc, row.lines[0], valueX, y, BODY, row.maxW, true);
-    } else {
-      useFace(doc, true);
-      doc.fontSize(BODY);
-      row.lines.forEach((line, lineIndex) => {
-        doc.text(line, valueX, y + lineIndex * BODY * 0.86, { lineBreak: false });
-      });
-    }
+    useFace(doc, true);
+    doc.fontSize(row.size);
+    row.lines.forEach((line, lineIndex) => {
+      doc.text(line, valueX, y + lineIndex * row.lineGap, { lineBreak: false });
+    });
   }
 
   if (fields.qr) {

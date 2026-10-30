@@ -25,10 +25,12 @@ export const downloads = {
     }),
   card: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/card-pdf`, no + "-card.pdf", { failMessage: "Card PDF download failed" }),
-  cardClassic: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/classic-card-pdf`, no + "-classic-card.pdf", {
-      failMessage: "Old ID card download failed",
-    }),
+  cardClassic: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
+    downloadFile(
+      `${certBase(jobId, certId)}/classic-card-pdf${fit === "shrink" ? "?fit=shrink" : ""}`,
+      fit === "shrink" ? no + "-old-card-shrink.pdf" : no + "-classic-card.pdf",
+      { failMessage: "Old ID card download failed" },
+    ),
   cardClassicShrink: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/classic-card-pdf?fit=shrink`, no + "-old-card-shrink.pdf", {
       failMessage: "Old ID card download failed",

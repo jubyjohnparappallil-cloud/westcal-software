@@ -92,7 +92,7 @@ export async function buildOldCertificateDocx(
     zip.file("word/media/signature.png", signature);
     await ensureRel("rIdSign", "media/signature.png");
     await ensureType("png", "image/png");
-    const { cx, cy } = authorizedSignatureExtent(signature, s.signatureChoice);
+    const { cx, cy } = authorizedSignatureExtent(signature, s.signatureChoice, s.signatureSize);
     // Keep the original paragraph height. Only float the signature to the right.
     xml = xml.replace(
       "<w:t>Authorized By:</w:t></w:r></w:p>",

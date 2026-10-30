@@ -84,7 +84,7 @@ export async function buildQannatiCertificateDocx(
   const employer = specialEmployer(job, certificate).toUpperCase();
   const values: Record<string, string> = {
     "{{NAME}}": xmlEscape(s.name.toUpperCase()),
-    "{{EID}}": xmlEscape(s.eid),
+    "{{EID}}": xmlEscape(s.idDocument === "passport" ? s.eid.toUpperCase() : s.eid),
     "{{COMPANY}}": xmlEscape(employer),
     "{{COURSE}}": xmlEscape(s.course.toUpperCase()),
     "{{CERTNO}}": xmlEscape(s.certificateNo),
@@ -97,7 +97,8 @@ export async function buildQannatiCertificateDocx(
   let xml = await file.async("string");
   const specialFit = job.specialCompanyFit === "shrink" || job.specialCompanyFit === "same" ? job.specialCompanyFit : s.companyFit;
   xml = shrinkCompanyParagraph(xml, companyNameHalfPoints(employer, 36, specialFit, s.companyScale));
-  if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "Passport No");
+  // Special design label in capitals, e.g. (PASSPORT NO: AB1234567)
+  if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "PASSPORT NO");
   for (const [token, value] of Object.entries(values)) xml = xml.replaceAll(token, value);
 
   const relsPath = "word/_rels/document.xml.rels";
@@ -134,7 +135,7 @@ export async function buildQannatiCertificateDocx(
     zip.file("word/media/signature.png", signature);
     await ensureRel("rIdSign", "media/signature.png");
     await ensureType("png", "image/png");
-    const { cx, cy } = authorizedSignatureExtent(signature, s.signatureChoice);
+    const { cx, cy } = authorizedSignatureExtent(signature, s.signatureChoice, s.signatureSize);
     xml = xml.replace(
       "<w:t>Authorized By:</w:t></w:r></w:p>",
       `<w:t>Authorized By:</w:t></w:r>${authorizedSignatureRun(cx, cy)}</w:p>`,
