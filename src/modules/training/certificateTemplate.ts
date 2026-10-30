@@ -225,6 +225,27 @@ function employerSize(text: string, scale: number, fit: string): string {
   return `${(base * clampCompanyScale(scale)).toFixed(2)}em`;
 }
 
+/** Break comma-joined titles so wrap/shrink can keep them clear of the photo. */
+function courseDisplayText(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .toUpperCase()
+    .replace(/,/g, ", ")
+    .replace(/\//g, "/ ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Long course titles on the QR verify page shrink so they do not run into the photo. */
+function courseVerifySize(text: string): string {
+  const len = text.trim().length;
+  if (len > 100) return "1.05cqi";
+  if (len > 80) return "1.2cqi";
+  if (len > 55) return "1.4cqi";
+  if (len > 40) return "1.65cqi";
+  return "2cqi";
+}
+
 export function clampCompanyScale(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 1;
@@ -371,7 +392,7 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 .cert-name{position:absolute;left:8%;right:30%;top:54.6%;text-align:center;font-weight:700;font-size:16px;font-size:2.15cqi;text-transform:uppercase;white-space:nowrap;line-height:1;color:#16325c}
 .cert-rule{position:absolute;left:32%;width:18%;top:57.4%;border:0;border-top:1px solid #222;margin:0}
 .lead{position:absolute;left:10%;right:30%;top:58.4%;text-align:center;font-style:italic;font-weight:700;font-size:13px;font-size:1.45cqi;color:#16325c;white-space:nowrap}
-.cert-course{position:absolute;left:8%;right:30%;top:62.2%;text-align:center;font-weight:700;font-size:15px;font-size:2cqi;text-transform:uppercase;color:#16325c;white-space:nowrap}
+.cert-course{position:absolute;left:8%;right:30%;top:61.6%;max-height:6.2%;text-align:center;font-weight:700;font-size:15px;font-size:2cqi;text-transform:uppercase;color:#16325c;white-space:normal;line-height:1.12;overflow:hidden;padding:0 1%}
 .meta-col{position:absolute;top:68.2%;font-weight:700;font-size:13px;font-size:1.45cqi;color:#16325c;text-align:left;line-height:1.85}
 .meta-left{left:12%;width:40%}
 .meta-right{left:54%;width:26%}
@@ -391,7 +412,7 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
   <div class="cert-name">${esc(s.name)}</div>
   <hr class="cert-rule">
   <div class="lead">has successfully completed one day safety training for</div>
-  <div class="cert-course">${esc(s.course)}</div>
+  <div class="cert-course" style="font-size:${courseVerifySize(courseDisplayText(s.course))}">${esc(courseDisplayText(s.course))}</div>
   <div class="meta-col meta-left">
     <div><span>${s.idDocument === "passport" ? "Passport No" : "EID Number"}</span> ${esc(s.eid || "-")}</div>
     <div><span>Employed by</span> <b class="employer" style="font-size:${employerSize(company, s.companyScale, s.companyFit)}">${esc(company)}</b></div>
@@ -503,7 +524,23 @@ function drawPrintedCertificate(
   doc.restore();
 
   placeLine("has successfully completed one day safety training for", py(608), "Times-BoldItalic", 9, 6);
-  placeLine(s.course.toUpperCase(), py(646), "Times-Bold", 12, 7);
+  {
+    const course = courseDisplayText(s.course);
+    let size = 12;
+    const minSize = 6;
+    doc.font("Times-Bold").fillColor(navy);
+    while (size > minSize && doc.fontSize(size).widthOfString(course) > textW) size -= 0.25;
+    if (doc.fontSize(size).widthOfString(course) <= textW) {
+      placeLine(course, py(646), "Times-Bold", size, minSize);
+    } else {
+      size = Math.min(9.5, size);
+      while (size > minSize && doc.fontSize(size).heightOfString(course, { width: textW, align: "center" }) > size * 2.5) {
+        size -= 0.25;
+      }
+      doc.font("Times-Bold").fontSize(size).fillColor(navy)
+        .text(course, textLeft, py(638), { width: textW, align: "center", lineGap: 1, height: size * 2.6 });
+    }
+  }
 
   let y = py(708);
   const leftX = px(108);

@@ -193,7 +193,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
                       {c.name}
                       <div className="muted">{c.company || j.customerName || ""}</div>
                     </td>
-                    <td>{c.course}</td>
+                    <td className="cert-course-cell">{c.course}</td>
                     <td>{c.trainingDate}</td>
                     <td>
                       <div className="cert-downloads" style={{ justifyContent: "flex-start", margin: 0 }}>

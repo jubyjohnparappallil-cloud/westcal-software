@@ -1340,14 +1340,26 @@ td.row-actions .btn {
   position: absolute;
   left: 8%;
   right: 30%;
-  top: 62.2%;
+  top: 61.6%;
+  max-height: 6.2%;
   text-align: center;
   font-weight: 700;
   font-size: 14px;
   font-size: 2cqi;
   text-transform: uppercase;
   color: #16325c;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.12;
+  overflow: hidden;
+  padding: 0 1%;
+}
+td.cert-course-cell {
+  max-width: 240px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.25;
+  font-size: 0.92em;
 }
 .west-cert .meta-col {
   position: absolute;

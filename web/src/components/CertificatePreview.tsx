@@ -32,7 +32,21 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
       <div className="cert-name">{c.name || ""}</div>
       <hr className="cert-rule" />
       <div className="lead">has successfully completed one day safety training for</div>
-      <div className="cert-course">{c.course || ""}</div>
+      <div
+        className="cert-course"
+        style={{
+          fontSize: (() => {
+            const len = String(c.course || "").trim().length;
+            if (len > 100) return "1.05cqi";
+            if (len > 80) return "1.2cqi";
+            if (len > 55) return "1.4cqi";
+            if (len > 40) return "1.65cqi";
+            return undefined;
+          })(),
+        }}
+      >
+        {c.course || ""}
+      </div>
       <div className="meta-col meta-left">
         <div>
           <span>{(c.idDocument || attendee?.idDocument) === "passport" ? "Passport No" : "EID Number"}</span> {c.idOrVisaNo || "-"}
