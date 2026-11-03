@@ -42,7 +42,7 @@ function directionHref(direction?: string, address?: string): string {
 function sheetView(j: Job) {
   const logoSrc = j.sheetInsigniaLogoDataUrl || "/logo.jpg";
   const jobLabel = (j.sheetJobLabel || "").trim() || "WESTCAL Job";
-  const jobNo = (j.sheetJobNo || "").trim() || displayJobNo(j.jobNo) || j.jobOrderNo || "";
+  const jobNo = (j.sheetJobNo || "").trim() || printedTrNo(j) || displayJobNo(j.jobNo) || j.jobOrderNo || "";
   const courseTitle = (j.sheetCourseTitle || "").trim() || j.course || "Training";
   const invoiced = (j.sheetCompany || "").trim() || j.customerName || "";
   const certifiedBy = (j.certificateUnder || "").trim() || invoiced;

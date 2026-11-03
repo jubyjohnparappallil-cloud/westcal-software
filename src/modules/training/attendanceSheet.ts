@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ServerResponse } from "node:http";
 import PDFDocument from "pdfkit";
-import type { TrainingJob } from "./training.js";
+import { printedTrNo, type TrainingJob } from "./training.js";
 import { applyDocumentControlFooter, DOC_CONTROL, drawWestcalLetterhead } from "./trainingForms.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -32,9 +32,9 @@ function dataUrlBuffer(dataUrl: string): Buffer {
   return Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
 }
 
-/** Job number printed on the attendance sheet: the real job number, without the WC- prefix. */
+/** Same TR as certificates / filename: prefer job order no (TR 4506), not internal WC-TR####. */
 export function sheetJobNo(job: TrainingJob): string {
-  return String(job.jobNo || job.jobOrderNo || "").replace(/^WC-/i, "");
+  return printedTrNo(job);
 }
 
 function courseCode(job: TrainingJob): string {

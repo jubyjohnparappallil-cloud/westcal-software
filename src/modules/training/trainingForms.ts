@@ -3,8 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ServerResponse } from "node:http";
 import PDFDocument from "pdfkit";
-import type { TrainingJob } from "./training.js";
-import { formatJobDates } from "./training.js";
+import { formatJobDates, printedTrNo, type TrainingJob } from "./training.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOGO = join(__dirname, "..", "..", "ui", "logo.jpg");
@@ -105,10 +104,9 @@ function box(
   });
 }
 
-/** Job number printed on the training pack: TR… only, without the WC- prefix. */
+/** Job number printed on the training pack: same TR as certificates (prefer job order no). */
 function trNumber(job: TrainingJob): string {
-  const jobNo = String(job.jobNo || "").trim().replace(/^WC-/i, "");
-  return jobNo || String(job.jobOrderNo || "").trim();
+  return printedTrNo(job);
 }
 
 function fileToken(value: string): string {
