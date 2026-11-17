@@ -446,7 +446,7 @@ export function JobDetail({
               <button className="btn sec sm" onClick={() => downloads.cardClassicShrink(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
                 Old card shrink
               </button>
-              <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+              <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), j.companyFit === "shrink" ? "shrink" : "same")}>
                 Old design data
               </button>
               {perms.canIssueCerts() && (

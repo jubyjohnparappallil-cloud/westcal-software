@@ -14,12 +14,14 @@ import type { Certificate, Job } from "../../types";
 function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; compact?: boolean; onChanged: () => void }) {
   const { perms } = useApp();
   const no = c.certificateNo;
-  const fit = j.companyFit === "shrink" ? "shrink" : "same";
+  const [fitPick, setFitPick] = useState<"same" | "shrink" | null>(null);
+  const fit = fitPick ?? (j.companyFit === "shrink" ? "shrink" : "same");
   const specialFit = j.specialCompanyFit === "shrink" || j.specialCompanyFit === "same" ? j.specialCompanyFit : fit;
   const signature = j.certificateSignature === "2" || j.certificateSignature === "3" ? j.certificateSignature : "1";
   const signSize = j.certificateSignatureSize === "normal" ? "normal" : "medium";
   async function setFit(next: "same" | "shrink") {
     if (next === fit) return;
+    setFitPick(next);
     await api("PATCH", `/api/training/${j.id}`, { companyFit: next });
     onChanged();
   }
@@ -46,13 +48,13 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
       <button className="btn sec sm" onClick={() => downloads.certificateNoPhoto(j.id, c.id, no)}>
         Without photo
       </button>
-      <button className="btn sec sm" onClick={() => downloads.certificateContent(j.id, c.id, no)}>
+      <button className="btn sec sm" onClick={() => downloads.certificateContent(j.id, c.id, no, fit)}>
         Inside data
       </button>
-      <button className="btn sec sm" onClick={() => downloads.certificateContentNoPhoto(j.id, c.id, no)}>
+      <button className="btn sec sm" onClick={() => downloads.certificateContentNoPhoto(j.id, c.id, no, fit)}>
         Inside data without photo
       </button>
-      <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, no)}>
+      <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, no, fit)}>
         Old design data
       </button>
       <button className={"btn sm " + (fit === "same" ? "dark" : "sec")} onClick={() => void setFit("same")}>
@@ -71,7 +73,7 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
           style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
         >
           Signature {n}
-          <img src={`/certificate-signature-${n}.png?v=20261026qr`} alt="" style={{ height: n === "2" ? 36 : 20, maxWidth: n === "2" ? 120 : 64, objectFit: "contain" }} />
+          <img src={`/certificate-signature-${n}.png?v=20261117slope`} alt="" style={{ height: n === "2" ? 36 : 20, maxWidth: n === "2" ? 120 : 64, objectFit: "contain" }} />
         </button>
       ))}
       <button
@@ -90,7 +92,7 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
       </button>
       {perms.canIssueCerts() && (
         <>
-          <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, no)}>
+          <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, no, specialFit)}>
             Special design
           </button>
           <button className={"btn sm " + (specialFit === "same" ? "dark" : "sec")} onClick={() => void setSpecialFit("same")}>
@@ -133,7 +135,7 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
   return (
     <>
       <p className="hint">
-        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate. <b>Same size</b> keeps a long company name as large as the trainee name. <b>Shrink</b> makes that long name smaller. <b>Signature 1</b>, <b>Signature 2</b> and <b>Signature 3</b> pick which authorised signature prints on the old, new, and special certificates. For Signature 2, <b>Sign normal</b> is the earlier smaller print and <b>Sign medium</b> is the larger medium print — both change old design and special design. Choose, then download again.
+        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate. <b>Same size</b> keeps a long company name as large as the trainee name. <b>Shrink</b> makes a long trainee name, company name and course smaller. <b>Signature 1</b>, <b>Signature 2</b> and <b>Signature 3</b> pick which authorised signature prints on the old, new, and special certificates. For Signature 2, <b>Sign normal</b> is the earlier smaller print and <b>Sign medium</b> is the larger medium print — both change old design and special design. Choose, then download again.
         {perms.canIssueCerts() && (
           <>
             {" "}

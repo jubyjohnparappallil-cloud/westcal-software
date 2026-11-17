@@ -681,6 +681,13 @@ function requireUser(req: IncomingMessage): { userId: string; roles: string[] } 
   const { userId } = platform.auth.resolveSession(token);
   return { userId, roles: platform.permissions.getUserRoleIds(userId) };
 }
+/** Print-only Same size / Shrink, without changing saved job fields unless the query is set. */
+function jobWithPrintFit(job: TrainingJob, fit: string | null, specialFit?: string | null) {
+  let next = job;
+  if (fit === "shrink" || fit === "same") next = { ...next, companyFit: fit };
+  if (specialFit === "shrink" || specialFit === "same") next = { ...next, specialCompanyFit: specialFit };
+  return next;
+}
 /** Enforce a (module, action) permission for the caller. */
 function requirePerm(userId: string, module: string, action: PermissionKey["action"]): void {
   if (!platform.permissions.authorize(userId, module, action)) {
@@ -1515,7 +1522,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendTrainingCertificateContentPdf(
         res,
-        job,
+        jobWithPrintFit(job, url.searchParams.get("fit")),
         certificate,
         verifyLink(certificate.verificationRef)
       );
@@ -1533,7 +1540,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendTrainingCertificateContentPdf(
         res,
-        job,
+        jobWithPrintFit(job, url.searchParams.get("fit")),
         certificate,
         verifyLink(certificate.verificationRef),
         true
@@ -1552,7 +1559,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendOldCertificateDocx(
         res,
-        job,
+        jobWithPrintFit(job, url.searchParams.get("fit")),
         certificate,
         certificate.verificationRef
           ? verifyLink(certificate.verificationRef)
@@ -1572,7 +1579,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendQannatiCertificateDocx(
         res,
-        job,
+        jobWithPrintFit(job, url.searchParams.get("fit"), url.searchParams.get("specialFit") ?? url.searchParams.get("fit")),
         certificate,
         certificate.verificationRef
           ? verifyLink(certificate.verificationRef)
@@ -1729,17 +1736,21 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const editMatch = path.match(/^\/api\/training\/([^/]+)$/);
     if (method === "PATCH" && editMatch) {
       const existing = platform.training.getJob(editMatch[1]);
-      if ((existing.serviceType || "Training") === "Mapping") {
+      const b = await readBody(req);
+      const printKeys = ["companyFit", "specialCompanyFit", "certificateSignature", "certificateSignatureSize"];
+      const printOnly = Object.keys(b).length > 0 && Object.keys(b).every((k) => printKeys.includes(k));
+      if (printOnly) {
+        requireAnyPerm(userId, [["Certificates", "read"], ["Certificates", "edit"], ["Training", "edit"]]);
+      } else if ((existing.serviceType || "Training") === "Mapping") {
         requireAnyPerm(userId, [["Training", "edit"], ["Mapping", "edit"], ["Mapping", "create"]]);
       } else {
         requirePerm(userId, "Training", "edit");
       }
-      const b = await readBody(req);
       if (!platform.permissions.getUserRoleIds(userId).includes(ROLES.SUPER_ADMIN)) {
         delete b.jobOrderNo;
       }
       requireAssignedIfFieldUser(userId, editMatch[1]);
-      requireEditable(userId, editMatch[1]);
+      if (!printOnly) requireEditable(userId, editMatch[1]);
       sendJson(res, 200, platform.training.editJob(editMatch[1], b));
       return;
     }

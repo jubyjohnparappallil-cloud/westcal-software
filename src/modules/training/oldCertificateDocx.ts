@@ -8,9 +8,8 @@ import {
   authorizedSignatureExtent,
   authorizedSignatureRun,
   certificateSlots,
-  companyNameHalfPoints,
   readCertificateSignature,
-  shrinkCompanyParagraph,
+  shrinkCertificateTextParagraphs,
 } from "./certificateTemplate.js";
 import { printedTrNo, type TrainingCertificate, type TrainingJob } from "./training.js";
 
@@ -46,7 +45,7 @@ export async function buildOldCertificateDocx(
     "{{NAME}}": xmlEscape(s.name.toUpperCase()),
     "{{EID}}": xmlEscape(idNumber),
     "{{COMPANY}}": xmlEscape(s.company.toUpperCase()),
-    "{{COURSE}}": xmlEscape(s.course.toUpperCase()),
+    "{{COURSE}}": xmlEscape(s.course.toUpperCase().replace(/,/g, ", ").replace(/\//g, "/ ").replace(/\s+/g, " ").trim()),
     "{{CERTNO}}": xmlEscape(s.certificateNo),
     "{{JOBNO}}": xmlEscape(oldJobNo(job)),
     "{{TRAINING}}": xmlEscape(oldDate(s.trainingDate)),
@@ -56,7 +55,7 @@ export async function buildOldCertificateDocx(
   const file = zip.file("word/document.xml");
   if (!file) throw new Error("old certificate template is missing");
   let xml = await file.async("string");
-  xml = shrinkCompanyParagraph(xml, companyNameHalfPoints(s.company, 40, s.companyFit, s.companyScale));
+  xml = shrinkCertificateTextParagraphs(xml, s.name, s.company, s.course, s.companyFit, s.companyScale, 40, 40, 40);
   if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "PASSPORT NO");
   for (const [token, value] of Object.entries(values)) xml = xml.replaceAll(token, value);
   const relsPath = "word/_rels/document.xml.rels";

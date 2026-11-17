@@ -10,6 +10,15 @@ function employerTextSize(text: string, scale: unknown, fit: unknown): string {
   return `${(base * safe).toFixed(2)}em`;
 }
 
+function nameTextSize(text: string, fit: unknown): string | undefined {
+  if (fit !== "shrink") return undefined;
+  const len = String(text || "").trim().length;
+  if (len > 52) return "1.35cqi";
+  if (len > 40) return "1.6cqi";
+  if (len > 28) return "1.85cqi";
+  return undefined;
+}
+
 export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
   const ref = c.verificationRef ? encodeURIComponent(c.verificationRef) : "";
   const attendee = (j.attendees || []).find((a) => a.id === c.attendeeId);
@@ -29,7 +38,7 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
         </div>
       )}
       {design === "achievement" && <img className="cert-marks" src="/certificate-marks.png?v=20261007m" alt="KHDA permit" />}
-      <div className="cert-name">{c.name || ""}</div>
+      <div className="cert-name" style={{ fontSize: nameTextSize(c.name || "", j.companyFit) }}>{c.name || ""}</div>
       <hr className="cert-rule" />
       <div className="lead">has successfully completed one day safety training for</div>
       <div
@@ -78,7 +87,7 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
             : j.certificateSignature === "2" || j.certificateSignature === "3"
               ? j.certificateSignature
               : "1"
-        }.png?v=20261026qr`}
+        }.png?v=20261117slope`}
         alt="Authorized signature"
       />
       <div className="contact">

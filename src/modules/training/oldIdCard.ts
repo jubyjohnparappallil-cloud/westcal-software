@@ -257,12 +257,12 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
   const nameTop = u(tops[0]);
   const labelX = u(28);
   const valueX = u(210);
-  const photoX = u(637);
-  const photoY = u(218);
-  const photoW = u(102);
-  const photoH = u(118);
+  const photoW = u(126);
+  const photoH = u(146);
+  const photoX = u(743) - photoW;
+  const photoY = u(337) - photoH;
   const qrSize = u(62);
-  const qrX = photoX - qrSize - u(14);
+  const qrX = photoX - qrSize - u(100);
   const qrY = photoY + photoH - qrSize;
   const footerLimit = u(332);
   // Same size = full BODY + wrap. Shrink = smaller type + wrap so the full course stays on the card.
@@ -272,8 +272,9 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
   const placed = rows.map(([label, value], i) => {
     const base = u(tops[i]);
     const y = base + shift;
-    // Course and rows below sit beside the photo/QR — keep width clear of the QR so wrap never clips.
-    const maxW = (fields.qr && (i >= 2 || y + BODY > qrY) ? qrX : photoX) - valueX - u(6);
+    // Only rows that meet the QR stop short of it. Course stays full width beside the larger photo.
+    const overlapsQr = Boolean(fields.qr) && y + BODY > qrY - u(4);
+    const maxW = (overlapsQr ? qrX : photoX) - valueX - u(6);
     const layout = layoutField(doc, value, maxW, fitMode);
     const blockH =
       layout.lines.length <= 1

@@ -8,9 +8,8 @@ import {
   authorizedSignatureExtent,
   authorizedSignatureRun,
   certificateSlots,
-  companyNameHalfPoints,
   readCertificateSignature,
-  shrinkCompanyParagraph,
+  shrinkCertificateTextParagraphs,
 } from "./certificateTemplate.js";
 import { printedTrNo, type TrainingCertificate, type TrainingJob } from "./training.js";
 
@@ -96,7 +95,7 @@ export async function buildQannatiCertificateDocx(
   if (!file) throw new Error("special certificate template is missing");
   let xml = await file.async("string");
   const specialFit = job.specialCompanyFit === "shrink" || job.specialCompanyFit === "same" ? job.specialCompanyFit : s.companyFit;
-  xml = shrinkCompanyParagraph(xml, companyNameHalfPoints(employer, 36, specialFit, s.companyScale));
+  xml = shrinkCertificateTextParagraphs(xml, s.name, employer, s.course, specialFit, s.companyScale, 40, 36, 40);
   // Special design label in capitals, e.g. (PASSPORT NO: AB1234567)
   if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "PASSPORT NO");
   for (const [token, value] of Object.entries(values)) xml = xml.replaceAll(token, value);

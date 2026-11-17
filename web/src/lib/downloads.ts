@@ -9,18 +9,18 @@ export const downloads = {
     downloadFile(`${certBase(jobId, certId)}/nophoto-pdf`, no + "-certificate-nophoto.pdf"),
   certificateLayout: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/layout-pdf`, no + "-layout.pdf"),
-  certificateContent: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/content-pdf`, no + "-data.pdf"),
-  certificateContentNoPhoto: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/content-nophoto-pdf`, no + "-data-nophoto.pdf", {
+  certificateContent: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
+    downloadFile(`${certBase(jobId, certId)}/content-pdf${fit === "shrink" ? "?fit=shrink" : ""}`, no + "-data.pdf"),
+  certificateContentNoPhoto: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
+    downloadFile(`${certBase(jobId, certId)}/content-nophoto-pdf${fit === "shrink" ? "?fit=shrink" : ""}`, no + "-data-nophoto.pdf", {
       failMessage: "Inside data without photo download failed",
     }),
-  certificateOld: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/old-docx`, no + "-old-design.docx", {
+  certificateOld: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
+    downloadFile(`${certBase(jobId, certId)}/old-docx${fit === "shrink" ? "?fit=shrink" : ""}`, no + "-old-design.docx", {
       failMessage: "Old design document download failed",
     }),
-  certificateSpecial: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/special-docx`, no + "-special.docx", {
+  certificateSpecial: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
+    downloadFile(`${certBase(jobId, certId)}/special-docx${fit === "shrink" ? "?fit=shrink" : ""}`, no + "-special.docx", {
       failMessage: "Special certificate download failed",
     }),
   card: (jobId: string, certId: string, no: string) =>

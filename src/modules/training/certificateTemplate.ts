@@ -41,7 +41,7 @@ export function certificateSignaturePath(choice: unknown): string {
 
 export function certificateSignatureUrl(choice: unknown): string {
   const n = normalizeCertificateSignature(choice);
-  return `/certificate-signature-${n}.png?v=20261026qr`;
+  return `/certificate-signature-${n}.png?v=20261117slope`;
 }
 
 export function readCertificateSignature(choice: unknown): Buffer | null {
@@ -95,8 +95,8 @@ export function authorizedSignatureExtent(
       targetCx = 1680000; // earlier / smaller Signature 2
       maxCy = 950000;
     } else {
-      targetCx = 1920000; // medium Signature 2
-      maxCy = 1500000;
+      targetCx = 1760000; // medium Signature 2 — smaller than before, still above normal
+      maxCy = 1080000;
     }
   }
   if (!size?.w || !size?.h) return { cx: targetCx, cy: Math.round(targetCx * 0.4) };
@@ -119,7 +119,7 @@ export function authorizedSignatureRun(cx: number, cy: number): string {
 /** PDF fit box for the authorised signature on the new Westcal certificate. */
 export function authorizedSignaturePdfFit(choice: unknown, printSize: unknown = "medium"): { w: number; h: number } {
   if (normalizeCertificateSignature(choice) !== "2") return { w: 155, h: 58 };
-  return normalizeCertificateSignatureSize(printSize) === "normal" ? { w: 168, h: 72 } : { w: 200, h: 85 };
+  return normalizeCertificateSignatureSize(printSize) === "normal" ? { w: 168, h: 72 } : { w: 176, h: 76 };
 }
 
 export const BUILTIN_CERTIFICATE_DESIGNS = [
@@ -225,6 +225,16 @@ function employerSize(text: string, scale: number, fit: string): string {
   return `${(base * clampCompanyScale(scale)).toFixed(2)}em`;
 }
 
+/** Shrink a long trainee name on the QR verify page. */
+function nameVerifySize(text: string, fit: string): string {
+  if (fit !== "shrink") return "2.15cqi";
+  const len = text.trim().length;
+  if (len > 52) return "1.35cqi";
+  if (len > 40) return "1.6cqi";
+  if (len > 28) return "1.85cqi";
+  return "2.15cqi";
+}
+
 /** Break comma-joined titles so wrap/shrink can keep them clear of the photo. */
 function courseDisplayText(raw: string): string {
   return String(raw || "")
@@ -253,23 +263,76 @@ export function clampCompanyScale(value: unknown): number {
 }
 
 /** Same size matches the trainee name. Shrink makes a long company name smaller. */
-export function companyNameHalfPoints(text: string, nameHalfPoints: number, fit: unknown, scale: unknown): number {
+export function companyNameHalfPoints(
+  text: string,
+  nameHalfPoints: number,
+  fit: unknown,
+  scale: unknown,
+  maxLen = 34,
+  minHalf = 18,
+): number {
   const same = Math.max(16, Math.round(nameHalfPoints * clampCompanyScale(scale)));
   if (fit !== "shrink") return same;
   const len = Math.max(1, text.trim().length);
-  return len <= 34 ? same : Math.max(20, Math.round((same * 34) / len));
+  if (len <= maxLen) return Math.max(minHalf, Math.round(same * 0.82));
+  return Math.max(minHalf, Math.round((same * maxLen) / len));
 }
 
-export function shrinkCompanyParagraph(xml: string, halfPoints: number): string {
-  const at = xml.indexOf("{{COMPANY}}");
+function paragraphStart(xml: string, at: number): number {
+  let i = xml.lastIndexOf("<w:p", at);
+  while (i >= 0) {
+    const next = xml[i + 4];
+    if (next === " " || next === ">" || next === "/") return i;
+    i = xml.lastIndexOf("<w:p", i - 1);
+  }
+  return -1;
+}
+
+export function shrinkTokenParagraph(xml: string, token: string, halfPoints: number): string {
+  const needle = `{{${token}}}`;
+  const at = xml.indexOf(needle);
   if (at < 0) return xml;
-  const start = xml.lastIndexOf("<w:p", at);
+  const start = paragraphStart(xml, at);
   const end = xml.indexOf("</w:p>", at);
   if (start < 0 || end < 0) return xml;
   const para = xml.slice(start, end)
     .replace(/<w:sz w:val="\d+"\/>/g, `<w:sz w:val="${halfPoints}"/>`)
     .replace(/<w:szCs w:val="\d+"\/>/g, `<w:szCs w:val="${halfPoints}"/>`);
   return xml.slice(0, start) + para + xml.slice(end);
+}
+
+export function shrinkCompanyParagraph(xml: string, halfPoints: number): string {
+  return shrinkTokenParagraph(xml, "COMPANY", halfPoints);
+}
+
+/** Shrink to a medium print size: long trainee name, company and course, not only one field. */
+function mediumHalfPoints(text: string, base: number, fit: unknown): number {
+  if (fit !== "shrink") return base;
+  const len = String(text || "").trim().length;
+  if (len > 48) return Math.max(20, Math.round(base * 0.55));
+  if (len > 32) return Math.max(22, Math.round(base * 0.62));
+  if (len > 22) return Math.max(24, Math.round(base * 0.72));
+  return Math.max(26, Math.round(base * 0.82));
+}
+
+export function shrinkCertificateTextParagraphs(
+  xml: string,
+  name: string,
+  company: string,
+  course: string,
+  fit: unknown,
+  _scale: unknown,
+  nameHalfPoints = 40,
+  companyHalfPoints = 40,
+  courseHalfPoints = 40,
+): string {
+  let next = shrinkTokenParagraph(xml, "COMPANY", mediumHalfPoints(company, companyHalfPoints, fit));
+  if (fit !== "shrink") return next;
+  const nameSize = mediumHalfPoints(name, nameHalfPoints, fit);
+  next = shrinkTokenParagraph(next, "NAME", nameSize);
+  next = shrinkTokenParagraph(next, "EID", nameSize);
+  next = shrinkTokenParagraph(next, "COURSE", mediumHalfPoints(course, courseHalfPoints, fit));
+  return next;
 }
 
 async function loadCertificateArtwork(): Promise<Buffer | null> {
@@ -295,12 +358,20 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
   doc.fillColor("#333").font("Times-Italic").fontSize(11)
     .text("This is to certify that", x, y, { width: w, align: "center" });
   y = doc.y + 8;
-  doc.fillColor(navy).font("Times-Bold").fontSize(16)
-    .text(s.name.toUpperCase(), x, y, { width: w, align: "center" });
+  const name = s.name.toUpperCase();
+  let nameSize = 16;
+  doc.font("Times-Bold").fillColor(navy);
+  if (s.companyFit === "shrink") {
+    nameSize = name.length > 32 ? 11 : 12;
+    while (nameSize > 8 && doc.fontSize(nameSize).widthOfString(name) > w) nameSize -= 0.3;
+  }
+  doc.font("Times-Bold").fontSize(nameSize)
+    .text(name, x, y, { width: w, align: "center" });
   y = doc.y + 4;
   if (s.eid) {
     const idNumber = s.idDocument === "passport" ? s.eid.toUpperCase() : s.eid;
-    doc.fillColor("#111").font("Times-Bold").fontSize(11)
+    const eidSize = s.companyFit === "shrink" ? nameSize : 11;
+    doc.fillColor("#111").font("Times-Bold").fontSize(eidSize)
       .text(`(${s.idDocument === "passport" ? "PASSPORT NO" : "EID NO"}: ${idNumber})`, x, y, { width: w, align: "center" });
     y = doc.y + 8;
   }
@@ -311,7 +382,8 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
   let companySize = 13 * s.companyScale;
   doc.font("Times-Bold").fillColor(navy);
   if (s.companyFit === "shrink") {
-    while (companySize > 8 && doc.fontSize(companySize).widthOfString(company) > w) companySize -= 0.5;
+    companySize = company.length > 28 ? 11 : 12;
+    while (companySize > 8 && doc.fontSize(companySize).widthOfString(company) > w) companySize -= 0.3;
   }
   doc.font("Times-Bold").fontSize(companySize)
     .text(company, x, y, { width: w, align: "center" });
@@ -319,8 +391,15 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
   doc.fillColor("#333").font("Times-Italic").fontSize(11)
     .text("has successfully completed one day safety training for", x, y, { width: w, align: "center" });
   y = doc.y + 8;
-  doc.fillColor(navy).font("Times-Bold").fontSize(s.course.length > 36 ? 12 : 14)
-    .text(s.course.toUpperCase(), x, y, { width: w, align: "center" });
+  const course = s.course.toUpperCase();
+  let courseSize = course.length > 36 ? 12 : 14;
+  doc.font("Times-Bold").fillColor(navy);
+  if (s.companyFit === "shrink") {
+    courseSize = course.length > 36 ? 9 : 10.5;
+    while (courseSize > 7 && doc.fontSize(courseSize).widthOfString(course) > w) courseSize -= 0.3;
+  }
+  doc.font("Times-Bold").fontSize(courseSize)
+    .text(course, x, y, { width: w, align: "center" });
   y = Math.min(doc.y + 16, qrY + 20);
   const metaRows = [
     ["Certificate No.:", s.certificateNo],
@@ -409,7 +488,7 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 <div class="page"><div class="west-cert">
   ${photo}
   <img class="cert-marks" src="/certificate-marks.png?v=20261007m" alt="KHDA permit">
-  <div class="cert-name">${esc(s.name)}</div>
+  <div class="cert-name" style="font-size:${nameVerifySize(s.name, s.companyFit)}">${esc(s.name)}</div>
   <hr class="cert-rule">
   <div class="lead">has successfully completed one day safety training for</div>
   <div class="cert-course" style="font-size:${courseVerifySize(courseDisplayText(s.course))}">${esc(courseDisplayText(s.course))}</div>
