@@ -443,6 +443,9 @@ export function JobDetail({
               <button className="btn sec sm" onClick={() => downloads.cardClassic(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), j.companyFit === "shrink" ? "shrink" : "same")}>
                 Old ID card
               </button>
+              <button className="btn sec sm" onClick={() => downloads.cardClassicPrevious(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), j.companyFit === "shrink" ? "shrink" : "same")}>
+                Previous ID card
+              </button>
               <button className="btn sec sm" onClick={() => downloads.cardClassicShrink(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
                 Old card shrink
               </button>

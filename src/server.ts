@@ -1616,6 +1616,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         return;
       }
       const fit = url.searchParams.get("fit") === "shrink" ? "shrink" : "same";
+      const layout = url.searchParams.get("layout") === "previous" ? "previous" : "current";
       await sendOldTrainingCardPdf(
         res,
         job,
@@ -1624,6 +1625,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           ? verifyLink(certificate.verificationRef)
           : undefined,
         fit,
+        layout,
       );
       return;
     }

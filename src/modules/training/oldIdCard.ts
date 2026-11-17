@@ -30,6 +30,8 @@ const CONTACT = 15.5 * S;
 const FOOTER = 16.2 * S;
 
 export type OldCardFit = "same" | "shrink";
+/** Current = QR left + larger photo. Previous = original sample layout before those moves. */
+export type OldCardLayout = "current" | "previous";
 
 export type OldCardFields = {
   name: string;
@@ -41,6 +43,7 @@ export type OldCardFields = {
   photo?: Buffer | null;
   /** Same size keeps the sample type size. Shrink reduces a long line so it stays on one row. */
   fit?: OldCardFit;
+  layout?: OldCardLayout;
   qr?: Buffer | null;
 };
 
@@ -257,12 +260,13 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
   const nameTop = u(tops[0]);
   const labelX = u(28);
   const valueX = u(210);
-  const photoW = u(126);
-  const photoH = u(146);
-  const photoX = u(743) - photoW;
-  const photoY = u(337) - photoH;
+  const previous = fields.layout === "previous";
+  const photoW = previous ? u(102) : u(126);
+  const photoH = previous ? u(118) : u(146);
+  const photoX = previous ? u(637) : u(743) - photoW;
+  const photoY = previous ? u(218) : u(337) - photoH;
   const qrSize = u(62);
-  const qrX = photoX - qrSize - u(100);
+  const qrX = photoX - qrSize - (previous ? u(14) : u(100));
   const qrY = photoY + photoH - qrSize;
   const footerLimit = u(332);
   // Same size = full BODY + wrap. Shrink = smaller type + wrap so the full course stays on the card.
@@ -272,8 +276,10 @@ export async function renderOldIdCardPdf(fields: OldCardFields): Promise<Buffer>
   const placed = rows.map(([label, value], i) => {
     const base = u(tops[i]);
     const y = base + shift;
-    // Only rows that meet the QR stop short of it. Course stays full width beside the larger photo.
-    const overlapsQr = Boolean(fields.qr) && y + BODY > qrY - u(4);
+    // Previous layout: course and rows below stay clear of the QR. Current: only rows that meet the QR.
+    const overlapsQr = previous
+      ? Boolean(fields.qr) && (i >= 2 || y + BODY > qrY)
+      : Boolean(fields.qr) && y + BODY > qrY - u(4);
     const maxW = (overlapsQr ? qrX : photoX) - valueX - u(6);
     const layout = layoutField(doc, value, maxW, fitMode);
     const blockH =
@@ -343,6 +349,7 @@ export async function sendOldTrainingCardPdf(
   c: TrainingCertificate,
   verifyUrl?: string,
   fit: OldCardFit = "same",
+  layout: OldCardLayout = "current",
 ): Promise<void> {
   const s = certificateSlots(c, job);
   const trainee = job.attendees.find((item) => item.id === c.attendeeId);
@@ -370,10 +377,14 @@ export async function sendOldTrainingCardPdf(
     certificateNo: s.certificateNo,
     photo,
     fit,
+    layout,
     qr,
   });
   const no = (c.certificateNo || "card").replace(/[^a-zA-Z0-9_-]/g, "_");
-  const tag = fit === "shrink" ? "old-card-shrink" : "old-card";
+  const tag = [
+    layout === "previous" ? "previous-id-card" : "old-card",
+    fit === "shrink" ? "shrink" : "",
+  ].filter(Boolean).join("-");
   res.writeHead(200, {
     "Content-Type": "application/pdf",
     "Cache-Control": "no-store",
