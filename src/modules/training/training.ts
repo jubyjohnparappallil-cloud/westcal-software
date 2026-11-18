@@ -180,6 +180,8 @@ export interface TrainingCertificate {
   generatedAt: Date;
   /** Authorised signature printed on this certificate (and shown when the QR is scanned). */
   certificateSignature?: "1" | "2" | "3";
+  /** QR place printed on this certificate (and shown when the QR is scanned). */
+  qrPosition?: "right" | "left";
 }
 
 export interface TrainingJob {
@@ -1097,6 +1099,10 @@ export class TrainingService {
       const pick = job.certificateSignature === "2" || job.certificateSignature === "3" ? job.certificateSignature : "1";
       for (const cert of job.certificates) cert.certificateSignature = pick;
     }
+    if (patch.qrPosition !== undefined) {
+      const place = job.qrPosition === "left" ? "left" : "right";
+      for (const cert of job.certificates) cert.qrPosition = place;
+    }
     if (job.serviceType === "Mapping" && (patch.mappingType !== undefined || patch.mappingRange !== undefined)) {
       const mappingType = String(job.mappingType ?? "").trim();
       const mappingRange = String(job.mappingRange ?? "").trim();
@@ -1961,6 +1967,7 @@ export class TrainingService {
       generatedAt: new Date(),
       certificateSignature:
         job.certificateSignature === "2" || job.certificateSignature === "3" ? job.certificateSignature : "1",
+      qrPosition: job.qrPosition === "left" ? "left" : "right",
     });
   }
 

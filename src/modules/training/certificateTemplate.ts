@@ -216,7 +216,7 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
     companyFit: job.companyFit === "shrink" ? "shrink" : "same",
     nameFit: job.nameFit === "shrink" ? "shrink" : "same",
     courseFit: job.courseFit === "shrink" ? "shrink" : "same",
-    qrPosition: job.qrPosition === "left" ? "left" : "right",
+    qrPosition: c.qrPosition === "left" || job.qrPosition === "left" ? "left" : "right",
   };
 }
 
@@ -477,7 +477,9 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 .auth-seal{position:absolute;left:39%;top:77.4%;width:13%;height:auto;object-fit:contain;z-index:3}
 .contact{position:absolute;left:9%;top:84.8%;width:24%;text-align:left;font-weight:700;font-size:11px;font-size:1.12cqi;line-height:1.15;color:#16325c}
 .qr{position:absolute;right:22%;top:75%;width:16%;background:#fff;padding:6px;box-sizing:border-box;z-index:4}
-.qr.qr-left{right:auto;left:4%;top:68.2%;width:11%}
+.cert-no-row{position:absolute;left:8%;right:28%;top:68.2%;display:flex;flex-direction:row;align-items:flex-start;gap:10px;z-index:4}
+.cert-no-row .qr{position:relative;right:auto;top:auto;left:auto;width:58px;padding:0;flex:0 0 58px}
+.cert-no-row .meta-right{position:relative;left:auto;top:auto;width:auto}
 .qr img{width:100%;height:auto;display:block;background:#fff}
 </style></head><body>
 <div class="page"><div class="west-cert">
@@ -492,16 +494,25 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
     <div><span>Employed by</span> <b class="employer" style="font-size:${employerSize(company, s.companyScale, s.companyFit)}">${esc(company)}</b></div>
     <div><span>Training Date</span> ${esc(formatCertDate(s.trainingDate))}</div>
   </div>
+  ${s.qrPosition === "left" ? `
+  <div class="cert-no-row">
+    ${ref ? `<div class="qr"><img src="/verify/${ref}/qr.png" alt="Scan to verify"></div>` : ""}
+    <div class="meta-col meta-right">
+      <div><span>Certificate No.</span> ${esc(s.certificateNo)}</div>
+      <div><span>Job No.</span> ${esc(s.jobNo)}</div>
+      <div><span>Expiry Date</span> ${esc(formatCertDate(s.expiresOn))}</div>
+    </div>
+  </div>` : `
   <div class="meta-col meta-right">
     <div><span>Certificate No.</span> ${esc(s.certificateNo)}</div>
     <div><span>Job No.</span> ${esc(s.jobNo)}</div>
     <div><span>Expiry Date</span> ${esc(formatCertDate(s.expiresOn))}</div>
   </div>
+  ${ref ? `<div class="qr"><img src="/verify/${ref}/qr.png" alt="Scan to verify"></div>` : ""}`}
   <div class="auth">AUTHORISED BY</div>
   <img class="auth-sign" src="${certificateSignatureUrl(s.signatureChoice)}" alt="Authorized signature">
   <img class="auth-seal" src="/certificate-company-seal.png?v=20261017s" alt="Westcal seal">
   <div class="contact">Westcal Instrumentation and Calibration<br>Services LLC<br>Morocco Cluster, International City,<br>Dubai, UAE.<br>info@westcal.ae<br>+971566654326 &amp; +97145762773.<br>https://westcal.ae/</div>
-  ${ref ? `<div class="qr${s.qrPosition === "left" ? " qr-left" : ""}"><img src="/verify/${ref}/qr.png" alt="Scan to verify"></div>` : ""}
 </div></div>
 </body></html>`;
 }

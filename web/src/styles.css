@@ -1469,11 +1469,31 @@ td.cert-course-cell {
   box-sizing: border-box;
   z-index: 2;
 }
-.west-cert .qr.qr-left {
-  right: auto;
-  left: 4%;
+.west-cert .cert-no-row {
+  position: absolute;
+  left: 8%;
+  right: 28%;
   top: 68.2%;
-  width: 10%;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  z-index: 4;
+}
+.west-cert .cert-no-row .qr {
+  position: relative;
+  right: auto;
+  top: auto;
+  left: auto;
+  width: 58px;
+  padding: 0;
+  flex: 0 0 58px;
+}
+.west-cert .cert-no-row .meta-right {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: auto;
 }
 .west-cert .qr img {
   width: 100%;

@@ -61,17 +61,38 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
           <span>Training Date</span> {certDate(c.trainingDate)}
         </div>
       </div>
-      <div className="meta-col meta-right">
-        <div>
-          <span>Certificate No.</span> {c.certificateNo || ""}
+      {((c as { qrPosition?: string }).qrPosition === "left" || j.qrPosition === "left") ? (
+        <div className="cert-no-row">
+          {c.verificationRef && (
+            <div className="qr">
+              <img src={`/verify/${ref}/qr.png`} alt="Scan to verify" />
+            </div>
+          )}
+          <div className="meta-col meta-right">
+            <div>
+              <span>Certificate No.</span> {c.certificateNo || ""}
+            </div>
+            <div>
+              <span>Job No.</span> {printedTrNo(j) || "-"}
+            </div>
+            <div>
+              <span>Expiry Date</span> {certDate(c.expiresOn)}
+            </div>
+          </div>
         </div>
-        <div>
-          <span>Job No.</span> {printedTrNo(j) || "-"}
+      ) : (
+        <div className="meta-col meta-right">
+          <div>
+            <span>Certificate No.</span> {c.certificateNo || ""}
+          </div>
+          <div>
+            <span>Job No.</span> {printedTrNo(j) || "-"}
+          </div>
+          <div>
+            <span>Expiry Date</span> {certDate(c.expiresOn)}
+          </div>
         </div>
-        <div>
-          <span>Expiry Date</span> {certDate(c.expiresOn)}
-        </div>
-      </div>
+      )}
       <div className="auth">AUTHORISED BY</div>
       <img
         className="auth-sign"
@@ -99,8 +120,8 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
         <br />
         https://westcal.ae/
       </div>
-      {c.verificationRef && (
-        <div className={j.qrPosition === "left" ? "qr qr-left" : "qr"}>
+      {c.verificationRef && (c as { qrPosition?: string }).qrPosition !== "left" && j.qrPosition !== "left" && (
+        <div className="qr">
           <img src={`/verify/${ref}/qr.png`} alt="Scan to verify" />
         </div>
       )}
