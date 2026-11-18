@@ -1,22 +1,17 @@
 import { certDate, printedTrNo } from "../lib/jobs";
 import type { Certificate, Job } from "../types";
 
-function employerTextSize(text: string, scale: unknown, fit: unknown): string {
+function employerTextSize(text: string, _scale: unknown, fit: unknown): string {
   if (fit !== "shrink") return "1em";
-  const n = Number(scale);
-  const safe = Number.isFinite(n) ? Math.min(1, Math.max(0.55, n)) : 1;
   const len = text.trim().length;
-  const base = len > 52 ? 0.78 : len > 40 ? 0.88 : len > 28 ? 0.95 : 1;
-  return `${(base * safe).toFixed(2)}em`;
+  return len > 40 ? "0.9em" : "0.94em";
 }
 
 function nameTextSize(text: string, fit: unknown): string | undefined {
   if (fit !== "shrink") return undefined;
   const len = String(text || "").trim().length;
-  if (len > 52) return "1.35cqi";
-  if (len > 40) return "1.6cqi";
-  if (len > 28) return "1.85cqi";
-  return undefined;
+  if (len > 40) return "1.75cqi";
+  return "1.9cqi";
 }
 
 export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
@@ -38,19 +33,18 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
         </div>
       )}
       {design === "achievement" && <img className="cert-marks" src="/certificate-marks.png?v=20261007m" alt="KHDA permit" />}
-      <div className="cert-name" style={{ fontSize: nameTextSize(c.name || "", j.companyFit) }}>{c.name || ""}</div>
+      <div className="cert-name" style={{ fontSize: nameTextSize(c.name || "", j.nameFit) }}>{c.name || ""}</div>
       <hr className="cert-rule" />
       <div className="lead">has successfully completed one day safety training for</div>
       <div
         className="cert-course"
         style={{
           fontSize: (() => {
+            if (j.courseFit !== "shrink") return undefined;
             const len = String(c.course || "").trim().length;
-            if (len > 100) return "1.05cqi";
-            if (len > 80) return "1.2cqi";
-            if (len > 55) return "1.4cqi";
-            if (len > 40) return "1.65cqi";
-            return undefined;
+            if (len > 80) return "1.7cqi";
+            if (len > 50) return "1.8cqi";
+            return "1.9cqi";
           })(),
         }}
       >
@@ -106,7 +100,7 @@ export function CertificatePreview({ c, j }: { c: Certificate; j: Job }) {
         https://westcal.ae/
       </div>
       {c.verificationRef && (
-        <div className="qr">
+        <div className={j.qrPosition === "left" ? "qr qr-left" : "qr"}>
           <img src={`/verify/${ref}/qr.png`} alt="Scan to verify" />
         </div>
       )}

@@ -10,6 +10,8 @@ import {
   certificateSlots,
   readCertificateSignature,
   shrinkCertificateTextParagraphs,
+  unlockWordBodyXml,
+  unlockWordSettingsXml,
 } from "./certificateTemplate.js";
 import { printedTrNo, type TrainingCertificate, type TrainingJob } from "./training.js";
 
@@ -52,10 +54,22 @@ export async function buildOldCertificateDocx(
     "{{EXPIRY}}": xmlEscape(oldDate(s.expiresOn)),
   };
   const zip = await JSZip.loadAsync(await readFile(TEMPLATE));
+  const settings = zip.file("word/settings.xml");
+  if (settings) zip.file("word/settings.xml", unlockWordSettingsXml(await settings.async("string")));
   const file = zip.file("word/document.xml");
   if (!file) throw new Error("old certificate template is missing");
-  let xml = await file.async("string");
-  xml = shrinkCertificateTextParagraphs(xml, s.name, s.company, s.course, s.companyFit, s.companyScale, 40, 40, 40);
+  let xml = unlockWordBodyXml(await file.async("string"));
+  xml = shrinkCertificateTextParagraphs(
+    xml,
+    s.name,
+    s.company,
+    s.course,
+    { name: s.nameFit, company: s.companyFit, course: s.courseFit },
+    s.companyScale,
+    40,
+    40,
+    40,
+  );
   if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "PASSPORT NO");
   for (const [token, value] of Object.entries(values)) xml = xml.replaceAll(token, value);
   const relsPath = "word/_rels/document.xml.rels";
@@ -104,7 +118,10 @@ export async function buildOldCertificateDocx(
     zip.file("word/media/qr.png", png);
     await ensureRel("rIdQr", "media/qr.png");
     await ensureType("png", "image/png");
-    xml = xml.replace("</w:tbl><w:p w14:paraId=\"44007595\"", `</w:tbl>${QR_DRAWING}<w:p w14:paraId="44007595"`);
+    const qrXml = s.qrPosition === "left"
+      ? QR_DRAWING.replace('w:tblpX="9000"', 'w:tblpX="2300"').replace('w:tblpY="-720"', 'w:tblpY="-200"')
+      : QR_DRAWING;
+    xml = xml.replace("</w:tbl><w:p w14:paraId=\"44007595\"", `</w:tbl>${qrXml}<w:p w14:paraId="44007595"`);
   }
   zip.file("word/document.xml", xml);
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });

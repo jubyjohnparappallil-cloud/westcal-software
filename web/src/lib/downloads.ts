@@ -2,45 +2,69 @@ import { downloadFile } from "../api";
 
 const certBase = (jobId: string, certId: string) => `/api/training/${jobId}/certificates/${certId}`;
 
+export type FieldFit = "same" | "shrink";
+export type FieldFits = { name: FieldFit; company: FieldFit; course: FieldFit };
+
+export function fieldFitsQuery(fits: FieldFits, extra: Record<string, string> = {}): string {
+  const q = new URLSearchParams(extra);
+  if (fits.name === "shrink") q.set("nameFit", "shrink");
+  if (fits.company === "shrink") q.set("companyFit", "shrink");
+  if (fits.course === "shrink") q.set("courseFit", "shrink");
+  const text = q.toString();
+  return text ? `?${text}` : "";
+}
+
 export const downloads = {
-  certificate: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/pdf`, no + "-certificate.pdf"),
-  certificateNoPhoto: (jobId: string, certId: string, no: string) =>
-    downloadFile(`${certBase(jobId, certId)}/nophoto-pdf`, no + "-certificate-nophoto.pdf"),
+  certificate: (jobId: string, certId: string, no: string, fits?: FieldFits) =>
+    downloadFile(`${certBase(jobId, certId)}/pdf${fits ? fieldFitsQuery(fits) : ""}`, no + "-certificate.pdf"),
+  certificateNoPhoto: (jobId: string, certId: string, no: string, fits?: FieldFits) =>
+    downloadFile(`${certBase(jobId, certId)}/nophoto-pdf${fits ? fieldFitsQuery(fits) : ""}`, no + "-certificate-nophoto.pdf"),
   certificateLayout: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/layout-pdf`, no + "-layout.pdf"),
-  certificateContent: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
-    downloadFile(`${certBase(jobId, certId)}/content-pdf${fit === "shrink" ? "?fit=shrink" : ""}`, no + "-data.pdf"),
-  certificateContentNoPhoto: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
-    downloadFile(`${certBase(jobId, certId)}/content-nophoto-pdf${fit === "shrink" ? "?fit=shrink" : ""}`, no + "-data-nophoto.pdf", {
+  certificateContent: (jobId: string, certId: string, no: string, fits: FieldFits) =>
+    downloadFile(`${certBase(jobId, certId)}/content-pdf${fieldFitsQuery(fits)}`, no + "-data.pdf"),
+  certificateContentNoPhoto: (jobId: string, certId: string, no: string, fits: FieldFits) =>
+    downloadFile(`${certBase(jobId, certId)}/content-nophoto-pdf${fieldFitsQuery(fits)}`, no + "-data-nophoto.pdf", {
       failMessage: "Inside data without photo download failed",
     }),
-  certificateOld: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
-    downloadFile(`${certBase(jobId, certId)}/old-docx${fit === "shrink" ? "?fit=shrink" : ""}`, no + "-old-design.docx", {
+  certificateOld: (jobId: string, certId: string, no: string, fits: FieldFits) =>
+    downloadFile(`${certBase(jobId, certId)}/old-docx${fieldFitsQuery(fits)}`, no + "-old-design.docx", {
       failMessage: "Old design document download failed",
     }),
-  certificateSpecial: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
-    downloadFile(`${certBase(jobId, certId)}/special-docx${fit === "shrink" ? "?fit=shrink" : ""}`, no + "-special.docx", {
-      failMessage: "Special certificate download failed",
-    }),
+  certificateSpecial: (jobId: string, certId: string, no: string, fits: FieldFits) =>
+    downloadFile(
+      `${certBase(jobId, certId)}/special-docx${fieldFitsQuery(fits, {
+        ...(fits.name === "shrink" ? { specialNameFit: "shrink" } : {}),
+        ...(fits.company === "shrink" ? { specialCompanyFit: "shrink" } : {}),
+        ...(fits.course === "shrink" ? { specialCourseFit: "shrink" } : {}),
+      })}`,
+      no + "-special.docx",
+      { failMessage: "Special certificate download failed" },
+    ),
   card: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/card-pdf`, no + "-card.pdf", { failMessage: "Card PDF download failed" }),
-  cardClassic: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
-    downloadFile(
-      `${certBase(jobId, certId)}/classic-card-pdf${fit === "shrink" ? "?fit=shrink" : ""}`,
-      fit === "shrink" ? no + "-old-card-shrink.pdf" : no + "-classic-card.pdf",
-      { failMessage: "Old ID card download failed" },
-    ),
-  cardClassicPrevious: (jobId: string, certId: string, no: string, fit: "same" | "shrink" = "same") =>
-    downloadFile(
-      `${certBase(jobId, certId)}/classic-card-pdf?layout=previous${fit === "shrink" ? "&fit=shrink" : ""}`,
-      no + "-previous-id-card.pdf",
-      { failMessage: "Previous ID card download failed" },
-    ),
+  cardShrink: (jobId: string, certId: string, no: string) =>
+    downloadFile(`${certBase(jobId, certId)}/card-pdf?fit=shrink`, no + "-card-shrink.pdf", {
+      failMessage: "Card PDF download failed",
+    }),
+  cardClassic: (jobId: string, certId: string, no: string) =>
+    downloadFile(`${certBase(jobId, certId)}/classic-card-pdf`, no + "-classic-card.pdf", {
+      failMessage: "Old ID card download failed",
+    }),
+  cardClassicPrevious: (jobId: string, certId: string, no: string) =>
+    downloadFile(`${certBase(jobId, certId)}/classic-card-pdf?layout=previous`, no + "-previous-id-card.pdf", {
+      failMessage: "Previous ID card download failed",
+    }),
   cardClassicShrink: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/classic-card-pdf?fit=shrink`, no + "-old-card-shrink.pdf", {
       failMessage: "Old ID card download failed",
     }),
+  cardClassicPreviousShrink: (jobId: string, certId: string, no: string) =>
+    downloadFile(
+      `${certBase(jobId, certId)}/classic-card-pdf?layout=previous&fit=shrink`,
+      no + "-previous-id-card-shrink.pdf",
+      { failMessage: "Previous ID card download failed" },
+    ),
   cardLayout: (jobId: string, certId: string, no: string) =>
     downloadFile(`${certBase(jobId, certId)}/card-layout-pdf`, no + "-card-design.pdf", {
       failMessage: "Card design download failed",

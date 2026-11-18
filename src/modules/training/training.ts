@@ -314,12 +314,20 @@ export interface TrainingJob {
   companyScale?: number;
   /** Long company name: same size as the trainee name, or a smaller fitted size. */
   companyFit?: "same" | "shrink";
-  /** Same choice for the special certificate only. */
+  /** Long trainee name: keep normal size, or shrink. */
+  nameFit?: "same" | "shrink";
+  /** Long course title: keep normal size, or shrink. */
+  courseFit?: "same" | "shrink";
+  /** Same choices for the special certificate only. */
   specialCompanyFit?: "same" | "shrink";
+  specialNameFit?: "same" | "shrink";
+  specialCourseFit?: "same" | "shrink";
   /** Which of the three authorised signatures prints on old and new certificates. */
   certificateSignature?: "1" | "2" | "3";
   /** Signature 2 print size on old + special Word sheets: earlier smaller, or medium. */
   certificateSignatureSize?: "normal" | "medium";
+  /** Certificate QR: right of the details (current print) or left. */
+  qrPosition?: "right" | "left";
   /** Public join link token sent to trainees (no login). */
   traineeInviteToken?: string;
   /** Optional supporting files such as invoice, quotation, LPO or report. */
@@ -549,9 +557,14 @@ export interface CreateTrainingInput {
   certificateDesign?: string;
   companyScale?: number;
   companyFit?: "same" | "shrink";
+  nameFit?: "same" | "shrink";
+  courseFit?: "same" | "shrink";
   specialCompanyFit?: "same" | "shrink";
+  specialNameFit?: "same" | "shrink";
+  specialCourseFit?: "same" | "shrink";
   certificateSignature?: "1" | "2" | "3";
   certificateSignatureSize?: "normal" | "medium";
+  qrPosition?: "right" | "left";
 }
 
 /** A notification for the mobile/side app (e.g. "job assigned to you"). */
@@ -1061,7 +1074,11 @@ export class TrainingService {
       certificateDesign: patch.certificateDesign ?? job.certificateDesign,
       companyScale: patch.companyScale !== undefined ? clampStoredCompanyScale(patch.companyScale) : job.companyScale,
       companyFit: patch.companyFit !== undefined ? (patch.companyFit === "shrink" ? "shrink" : "same") : job.companyFit,
+      nameFit: patch.nameFit !== undefined ? (patch.nameFit === "shrink" ? "shrink" : "same") : job.nameFit,
+      courseFit: patch.courseFit !== undefined ? (patch.courseFit === "shrink" ? "shrink" : "same") : job.courseFit,
       specialCompanyFit: patch.specialCompanyFit !== undefined ? (patch.specialCompanyFit === "shrink" ? "shrink" : "same") : job.specialCompanyFit,
+      specialNameFit: patch.specialNameFit !== undefined ? (patch.specialNameFit === "shrink" ? "shrink" : "same") : job.specialNameFit,
+      specialCourseFit: patch.specialCourseFit !== undefined ? (patch.specialCourseFit === "shrink" ? "shrink" : "same") : job.specialCourseFit,
       certificateSignature: patch.certificateSignature !== undefined
         ? (String(patch.certificateSignature) === "2" || String(patch.certificateSignature) === "3"
           ? String(patch.certificateSignature) as "2" | "3"
@@ -1070,6 +1087,9 @@ export class TrainingService {
       certificateSignatureSize: patch.certificateSignatureSize !== undefined
         ? (String(patch.certificateSignatureSize) === "normal" ? "normal" : "medium")
         : job.certificateSignatureSize,
+      qrPosition: patch.qrPosition !== undefined
+        ? (String(patch.qrPosition) === "left" ? "left" : "right")
+        : job.qrPosition,
       lineItems: patch.lineItems ?? job.lineItems,
     });
     // Keep each certificate's QR verify page on the same signature that prints.

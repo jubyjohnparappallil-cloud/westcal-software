@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../../api";
 import { useApp } from "../../app-context";
 import { CertificatePreview } from "../../components/CertificatePreview";
@@ -7,27 +7,121 @@ import { Modal } from "../../components/Modal";
 import { Pagination, usePaged } from "../../components/Pagination";
 import { usePhotoCrop } from "../../components/PhotoCropper";
 import { shrinkImage } from "../../field/ocr";
-import { downloads } from "../../lib/downloads";
+import { downloads, type FieldFit, type FieldFits } from "../../lib/downloads";
 import { coursesForPerson, jobCourses } from "../../lib/jobs";
 import type { Certificate, Job } from "../../types";
+
+function asFit(value: unknown): FieldFit {
+  return value === "shrink" ? "shrink" : "same";
+}
+
+const SHRINK_FIELDS: Array<{ key: keyof FieldFits; label: string }> = [
+  { key: "name", label: "Name" },
+  { key: "company", label: "Company" },
+  { key: "course", label: "Course" },
+];
+
+function shrinkLabel(prefix: string, fits: FieldFits): string {
+  const on = SHRINK_FIELDS.filter((item) => fits[item.key] === "shrink").map((item) => item.label);
+  return on.length ? `${prefix}: ${on.join(", ")}` : `${prefix}: none`;
+}
+
+function ShrinkPick({
+  prefix,
+  fits,
+  onToggle,
+}: {
+  prefix: string;
+  fits: FieldFits;
+  onToggle: (field: keyof FieldFits) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const box = useRef<HTMLSpanElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const active = fits.name === "shrink" || fits.company === "shrink" || fits.course === "shrink";
+  function place() {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return;
+    const width = 188;
+    let left = r.left;
+    if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+    setPos({ top: r.bottom + 4, left });
+  }
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const close = (event: MouseEvent) => {
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onMove = () => place();
+    document.addEventListener("mousedown", close);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [open]);
+  return (
+    <span className="shrink-pick" ref={box}>
+      <button
+        type="button"
+        ref={btn}
+        className={"btn sm " + (active ? "dark" : "sec")}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {shrinkLabel(prefix, fits)} ▾
+      </button>
+      {open && (
+        <div className="shrink-pick-menu" style={{ top: pos.top, left: pos.left }}>
+          {SHRINK_FIELDS.map((item) => (
+            <label key={item.key}>
+              <input
+                type="checkbox"
+                checked={fits[item.key] === "shrink"}
+                onChange={() => onToggle(item.key)}
+              />
+              {item.label}
+            </label>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
 
 function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; compact?: boolean; onChanged: () => void }) {
   const { perms } = useApp();
   const no = c.certificateNo;
-  const [fitPick, setFitPick] = useState<"same" | "shrink" | null>(null);
-  const fit = fitPick ?? (j.companyFit === "shrink" ? "shrink" : "same");
-  const specialFit = j.specialCompanyFit === "shrink" || j.specialCompanyFit === "same" ? j.specialCompanyFit : fit;
+  const [fitPick, setFitPick] = useState<Partial<FieldFits>>({});
+  const [specialPick, setSpecialPick] = useState<Partial<FieldFits>>({});
+  const fits: FieldFits = {
+    name: fitPick.name ?? asFit(j.nameFit),
+    company: fitPick.company ?? asFit(j.companyFit),
+    course: fitPick.course ?? asFit(j.courseFit),
+  };
+  const specialFits: FieldFits = {
+    name: specialPick.name ?? asFit(j.specialNameFit ?? j.nameFit),
+    company: specialPick.company ?? asFit(j.specialCompanyFit ?? j.companyFit),
+    course: specialPick.course ?? asFit(j.specialCourseFit ?? j.courseFit),
+  };
   const signature = j.certificateSignature === "2" || j.certificateSignature === "3" ? j.certificateSignature : "1";
   const signSize = j.certificateSignatureSize === "normal" ? "normal" : "medium";
-  async function setFit(next: "same" | "shrink") {
-    if (next === fit) return;
-    setFitPick(next);
-    await api("PATCH", `/api/training/${j.id}`, { companyFit: next });
+  const qrPosition = j.qrPosition === "left" ? "left" : "right";
+  async function toggleFit(field: keyof FieldFits) {
+    const next: FieldFit = fits[field] === "shrink" ? "same" : "shrink";
+    setFitPick({ ...fits, [field]: next });
+    const key = field === "name" ? "nameFit" : field === "course" ? "courseFit" : "companyFit";
+    await api("PATCH", `/api/training/${j.id}`, { [key]: next });
     onChanged();
   }
-  async function setSpecialFit(next: "same" | "shrink") {
-    if (next === specialFit) return;
-    await api("PATCH", `/api/training/${j.id}`, { specialCompanyFit: next });
+  async function toggleSpecialFit(field: keyof FieldFits) {
+    const next: FieldFit = specialFits[field] === "shrink" ? "same" : "shrink";
+    setSpecialPick({ ...specialFits, [field]: next });
+    const key = field === "name" ? "specialNameFit" : field === "course" ? "specialCourseFit" : "specialCompanyFit";
+    await api("PATCH", `/api/training/${j.id}`, { [key]: next });
     onChanged();
   }
   async function setSignature(next: "1" | "2" | "3") {
@@ -40,29 +134,29 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
     await api("PATCH", `/api/training/${j.id}`, { certificateSignatureSize: next });
     onChanged();
   }
+  async function setQrPosition(next: "right" | "left") {
+    if (next === qrPosition) return;
+    await api("PATCH", `/api/training/${j.id}`, { qrPosition: next });
+    onChanged();
+  }
   return (
     <>
-      <button className="btn dark sm" onClick={() => downloads.certificate(j.id, c.id, no)}>
+      <button className="btn dark sm" onClick={() => downloads.certificate(j.id, c.id, no, fits)}>
         Download
       </button>
-      <button className="btn sec sm" onClick={() => downloads.certificateNoPhoto(j.id, c.id, no)}>
+      <button className="btn sec sm" onClick={() => downloads.certificateNoPhoto(j.id, c.id, no, fits)}>
         Without photo
       </button>
-      <button className="btn sec sm" onClick={() => downloads.certificateContent(j.id, c.id, no, fit)}>
+      <button className="btn sec sm" onClick={() => downloads.certificateContent(j.id, c.id, no, fits)}>
         Inside data
       </button>
-      <button className="btn sec sm" onClick={() => downloads.certificateContentNoPhoto(j.id, c.id, no, fit)}>
+      <button className="btn sec sm" onClick={() => downloads.certificateContentNoPhoto(j.id, c.id, no, fits)}>
         Inside data without photo
       </button>
-      <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, no, fit)}>
+      <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, no, fits)}>
         Old design data
       </button>
-      <button className={"btn sm " + (fit === "same" ? "dark" : "sec")} onClick={() => void setFit("same")}>
-        Same size
-      </button>
-      <button className={"btn sm " + (fit === "shrink" ? "dark" : "sec")} onClick={() => void setFit("shrink")}>
-        Shrink
-      </button>
+      <ShrinkPick prefix="Shrink" fits={fits} onToggle={(field) => void toggleFit(field)} />
       {(["1", "2", "3"] as const).map((n) => (
         <button
           key={n}
@@ -90,17 +184,26 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
       >
         Sign medium
       </button>
+      <button
+        className={"btn sm " + (qrPosition === "right" ? "dark" : "sec")}
+        title="QR on the right of the details — old and new certificate"
+        onClick={() => void setQrPosition("right")}
+      >
+        QR right
+      </button>
+      <button
+        className={"btn sm " + (qrPosition === "left" ? "dark" : "sec")}
+        title="QR on the left of the details — old and new certificate"
+        onClick={() => void setQrPosition("left")}
+      >
+        QR left
+      </button>
       {perms.canIssueCerts() && (
         <>
-          <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, no, specialFit)}>
+          <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, no, specialFits)}>
             Special design
           </button>
-          <button className={"btn sm " + (specialFit === "same" ? "dark" : "sec")} onClick={() => void setSpecialFit("same")}>
-            Same size
-          </button>
-          <button className={"btn sm " + (specialFit === "shrink" ? "dark" : "sec")} onClick={() => void setSpecialFit("shrink")}>
-            Shrink
-          </button>
+          <ShrinkPick prefix="Special shrink" fits={specialFits} onToggle={(field) => void toggleSpecialFit(field)} />
         </>
       )}
       <button className="btn sec sm" onClick={() => downloads.certificateLayout(j.id, c.id, no)}>
@@ -109,14 +212,20 @@ function CertDownloads({ j, c, compact, onChanged }: { j: Job; c: Certificate; c
       <button className={"btn sm " + (compact ? "dark" : "sec")} onClick={() => downloads.card(j.id, c.id, no)}>
         ID card
       </button>
-      <button className="btn sec sm" onClick={() => downloads.cardClassic(j.id, c.id, no, fit)}>
-        Old ID card
+      <button className="btn sec sm" onClick={() => downloads.cardShrink(j.id, c.id, no)}>
+        ID card shrink
       </button>
-      <button className="btn sec sm" onClick={() => downloads.cardClassicPrevious(j.id, c.id, no, fit)}>
-        Previous ID card
+      <button className="btn sec sm" onClick={() => downloads.cardClassic(j.id, c.id, no)}>
+        Old ID card
       </button>
       <button className="btn sec sm" onClick={() => downloads.cardClassicShrink(j.id, c.id, no)}>
         Old card shrink
+      </button>
+      <button className="btn sec sm" onClick={() => downloads.cardClassicPrevious(j.id, c.id, no)}>
+        Previous ID card
+      </button>
+      <button className="btn sec sm" onClick={() => downloads.cardClassicPreviousShrink(j.id, c.id, no)}>
+        Previous card shrink
       </button>
       <button className="btn sec sm" onClick={() => downloads.cardLayout(j.id, c.id, no)}>
         Card design
@@ -138,11 +247,11 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
   return (
     <>
       <p className="hint">
-        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate. <b>Same size</b> keeps a long company name as large as the trainee name. <b>Shrink</b> makes a long trainee name, company name and course smaller. <b>Signature 1</b>, <b>Signature 2</b> and <b>Signature 3</b> pick which authorised signature prints on the old, new, and special certificates. For Signature 2, <b>Sign normal</b> is the earlier smaller print and <b>Sign medium</b> is the larger medium print — both change old design and special design. Choose, then download again.
+        Click <b>Preview</b> to see a certificate. Use <b>Download</b> for the full certificate. For the new design, print <b>Certificate design</b> first, then <b>Inside data</b>. Use <b>Inside data without photo</b> when the photo must stay off that sheet. For the old design, download <b>Old design data</b> and print that Word file on the old certificate. Open the <b>Shrink</b> dropdown and tick <b>Name</b>, <b>Company</b> and/or <b>Course</b> — the same ticks apply to both new design Download and old design Word. <b>Special shrink</b> does the same for Special design only. ID cards have two options each: <b>ID card</b> / <b>ID card shrink</b>, <b>Old ID card</b> / <b>Old card shrink</b>, and <b>Previous ID card</b> / <b>Previous card shrink</b>. <b>QR right</b> and <b>QR left</b> place the scan code on both the old and new certificate. <b>Signature 1</b>, <b>Signature 2</b> and <b>Signature 3</b> pick which authorised signature prints on the old, new, and special certificates. For Signature 2, <b>Sign normal</b> is the earlier smaller print and <b>Sign medium</b> is the larger medium print — both change old design and special design. Choose, then download again.
         {perms.canIssueCerts() && (
           <>
             {" "}
-            <b>Special design</b> is the Qannati-style Word file. It prints the employer from the ID back, the TR job number, and the same authorised signature. The <b>Same size</b> and <b>Shrink</b> buttons beside it change only that file.
+            <b>Special design</b> is the Qannati-style Word file. It prints the employer from the ID back, the TR job number, and the same authorised signature. Use <b>Special shrink</b> beside it to tick name, company or course for that file only.
           </>
         )}
       </p>
@@ -165,7 +274,11 @@ export function CertificatesTab({ job: j, onChanged }: { job: Job; onChanged: ()
           width={560}
           onClose={() => setViewing(null)}
           actions={
-            <button className="btn dark sm" onClick={() => downloads.certificate(j.id, viewing.id, viewing.certificateNo)}>
+            <button className="btn dark sm" onClick={() => downloads.certificate(j.id, viewing.id, viewing.certificateNo, {
+              name: asFit(j.nameFit),
+              company: asFit(j.companyFit),
+              course: asFit(j.courseFit),
+            })}>
               Download
             </button>
           }

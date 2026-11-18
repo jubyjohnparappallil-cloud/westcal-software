@@ -295,14 +295,15 @@ async function sendTrainingCardPdf(
   job: TrainingJob,
   c: TrainingCertificate,
   verifyUrl?: string,
-  designOnly = false
+  designOnly = false,
+  fit: "same" | "shrink" = "same",
 ): Promise<void> {
   const trainee = job.attendees.find((item) => item.id === c.attendeeId);
   const logo = await readFile(join(__dirname, "ui", "logo.jpg"));
   const art = await readFile(join(__dirname, "ui", "id-card-blank.png"));
   const W = 465;
   const H = 293;
-  const fileTag = designOnly ? "card-design" : "card";
+  const fileTag = designOnly ? "card-design" : fit === "shrink" ? "card-shrink" : "card";
   const doc = new PDFDocument({
     size: [W, H],
     margin: 0,
@@ -365,9 +366,11 @@ async function sendTrainingCardPdf(
   // Name as title — larger navy blue (like old card emphasis, left-aligned).
   const name = (c.name || "").toUpperCase();
   doc.font("Helvetica-Bold");
-  let nameSize = 13;
+  const shrink = fit === "shrink";
+  let nameSize = shrink ? 11 : 13;
   const nameW = textRight - textLeft;
-  while (nameSize > 8 && doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "left" }) > nameSize * 2.5) {
+  const nameFloor = shrink ? 9 : 8;
+  while (nameSize > nameFloor && doc.fontSize(nameSize).heightOfString(name, { width: nameW, align: "left" }) > nameSize * 2.5) {
     nameSize -= 0.25;
   }
   const nameY = 72;
@@ -382,9 +385,10 @@ async function sendTrainingCardPdf(
     .replace(/\//g, "/ ")
     .replace(/\s+/g, " ");
   doc.font("Helvetica-Bold");
-  let tradeSize = 11;
+  let tradeSize = shrink ? 9 : 11;
   const maxTradeH = 34;
-  while (tradeSize > 6.5 && doc.fontSize(tradeSize).heightOfString(trade, { width: nameW }) > maxTradeH) {
+  const tradeFloor = shrink ? 7.5 : 6.5;
+  while (tradeSize > tradeFloor && doc.fontSize(tradeSize).heightOfString(trade, { width: nameW }) > maxTradeH) {
     tradeSize -= 0.25;
   }
   const tradeY = nameY + nameHeight + 3;
@@ -405,7 +409,7 @@ async function sendTrainingCardPdf(
     ["Expires On", classicCardDate(c.expiresOn)],
     ["Certificate No", c.certificateNo || ""],
   ];
-  const labelSize = 10;
+  const labelSize = shrink ? 9 : 10;
   const colonW = 10;
   let y = tradeY + tradeH + 8;
   // Rows may sit left of the photo; stop above the QR.
@@ -681,12 +685,38 @@ function requireUser(req: IncomingMessage): { userId: string; roles: string[] } 
   const { userId } = platform.auth.resolveSession(token);
   return { userId, roles: platform.permissions.getUserRoleIds(userId) };
 }
-/** Print-only Same size / Shrink, without changing saved job fields unless the query is set. */
-function jobWithPrintFit(job: TrainingJob, fit: string | null, specialFit?: string | null) {
-  let next = job;
-  if (fit === "shrink" || fit === "same") next = { ...next, companyFit: fit };
-  if (specialFit === "shrink" || specialFit === "same") next = { ...next, specialCompanyFit: specialFit };
-  return next;
+function queryFit(params: URLSearchParams, key: string, allShrink: boolean): "same" | "shrink" | undefined {
+  const value = params.get(key);
+  if (value === "shrink" || value === "same") return value;
+  if (allShrink) return "shrink";
+  return undefined;
+}
+
+/** Print-only shrink flags from the download URL, without rewriting saved job data unless the query is set. */
+function jobWithPrintFit(job: TrainingJob, params: URLSearchParams) {
+  const all = params.get("fit") === "shrink";
+  const nameFit = queryFit(params, "nameFit", all);
+  const companyFit = queryFit(params, "companyFit", all);
+  const courseFit = queryFit(params, "courseFit", all);
+  const specialAll = params.get("specialFit") === "shrink" || all;
+  const specialNameFit = queryFit(params, "specialNameFit", specialAll);
+  const specialCompanyFit = queryFit(params, "specialCompanyFit", specialAll) ?? queryFit(params, "specialFit", false);
+  const specialCourseFit = queryFit(params, "specialCourseFit", specialAll);
+  const qrPosition = params.get("qr") === "left" || params.get("qrPosition") === "left"
+    ? "left"
+    : params.get("qr") === "right" || params.get("qrPosition") === "right"
+      ? "right"
+      : undefined;
+  return {
+    ...job,
+    ...(nameFit ? { nameFit } : {}),
+    ...(companyFit ? { companyFit } : {}),
+    ...(courseFit ? { courseFit } : {}),
+    ...(specialNameFit ? { specialNameFit } : {}),
+    ...(specialCompanyFit ? { specialCompanyFit } : {}),
+    ...(specialCourseFit ? { specialCourseFit } : {}),
+    ...(qrPosition ? { qrPosition } : {}),
+  };
 }
 /** Enforce a (module, action) permission for the caller. */
 function requirePerm(userId: string, module: string, action: PermissionKey["action"]): void {
@@ -1472,7 +1502,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendTrainingCertificatePdf(
         res,
-        job,
+        jobWithPrintFit(job, url.searchParams),
         certificate,
         verifyLink(certificate.verificationRef)
       );
@@ -1490,7 +1520,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendTrainingCertificatePdf(
         res,
-        job,
+        jobWithPrintFit(job, url.searchParams),
         certificate,
         verifyLink(certificate.verificationRef),
         true
@@ -1522,7 +1552,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendTrainingCertificateContentPdf(
         res,
-        jobWithPrintFit(job, url.searchParams.get("fit")),
+        jobWithPrintFit(job, url.searchParams),
         certificate,
         verifyLink(certificate.verificationRef)
       );
@@ -1540,7 +1570,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendTrainingCertificateContentPdf(
         res,
-        jobWithPrintFit(job, url.searchParams.get("fit")),
+        jobWithPrintFit(job, url.searchParams),
         certificate,
         verifyLink(certificate.verificationRef),
         true
@@ -1559,7 +1589,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendOldCertificateDocx(
         res,
-        jobWithPrintFit(job, url.searchParams.get("fit")),
+        jobWithPrintFit(job, url.searchParams),
         certificate,
         certificate.verificationRef
           ? verifyLink(certificate.verificationRef)
@@ -1579,7 +1609,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       }
       await sendQannatiCertificateDocx(
         res,
-        jobWithPrintFit(job, url.searchParams.get("fit"), url.searchParams.get("specialFit") ?? url.searchParams.get("fit")),
+        jobWithPrintFit(job, url.searchParams),
         certificate,
         certificate.verificationRef
           ? verifyLink(certificate.verificationRef)
@@ -1601,7 +1631,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         res,
         job,
         certificate,
-        verifyLink(certificate.verificationRef)
+        verifyLink(certificate.verificationRef),
+        false,
+        url.searchParams.get("fit") === "shrink" ? "shrink" : "same",
       );
       return;
     }
@@ -1739,7 +1771,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     if (method === "PATCH" && editMatch) {
       const existing = platform.training.getJob(editMatch[1]);
       const b = await readBody(req);
-      const printKeys = ["companyFit", "specialCompanyFit", "certificateSignature", "certificateSignatureSize"];
+      const printKeys = [
+        "companyFit",
+        "nameFit",
+        "courseFit",
+        "specialCompanyFit",
+        "specialNameFit",
+        "specialCourseFit",
+        "certificateSignature",
+        "certificateSignatureSize",
+        "qrPosition",
+      ];
       const printOnly = Object.keys(b).length > 0 && Object.keys(b).every((k) => printKeys.includes(k));
       if (printOnly) {
         requireAnyPerm(userId, [["Certificates", "read"], ["Certificates", "edit"], ["Training", "edit"]]);

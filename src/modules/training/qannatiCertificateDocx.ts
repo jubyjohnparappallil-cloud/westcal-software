@@ -10,6 +10,8 @@ import {
   certificateSlots,
   readCertificateSignature,
   shrinkCertificateTextParagraphs,
+  unlockWordBodyXml,
+  unlockWordSettingsXml,
 } from "./certificateTemplate.js";
 import { printedTrNo, type TrainingCertificate, type TrainingJob } from "./training.js";
 
@@ -91,11 +93,28 @@ export async function buildQannatiCertificateDocx(
     "{{START}}": startTokenXml(s.trainingDate),
   };
   const zip = await JSZip.loadAsync(await readFile(TEMPLATE));
+  const settings = zip.file("word/settings.xml");
+  if (settings) zip.file("word/settings.xml", unlockWordSettingsXml(await settings.async("string")));
   const file = zip.file("word/document.xml");
   if (!file) throw new Error("special certificate template is missing");
-  let xml = await file.async("string");
-  const specialFit = job.specialCompanyFit === "shrink" || job.specialCompanyFit === "same" ? job.specialCompanyFit : s.companyFit;
-  xml = shrinkCertificateTextParagraphs(xml, s.name, employer, s.course, specialFit, s.companyScale, 40, 36, 40);
+  let xml = unlockWordBodyXml(await file.async("string"));
+  const pick = (special: unknown, main: unknown) =>
+    special === "shrink" || special === "same" ? special : main;
+  xml = shrinkCertificateTextParagraphs(
+    xml,
+    s.name,
+    employer,
+    s.course,
+    {
+      name: pick(job.specialNameFit, s.nameFit),
+      company: pick(job.specialCompanyFit, s.companyFit),
+      course: pick(job.specialCourseFit, s.courseFit),
+    },
+    s.companyScale,
+    40,
+    36,
+    40,
+  );
   // Special design label in capitals, e.g. (PASSPORT NO: AB1234567)
   if (s.idDocument === "passport") xml = xml.replaceAll("EID NO", "PASSPORT NO");
   for (const [token, value] of Object.entries(values)) xml = xml.replaceAll(token, value);
@@ -146,10 +165,13 @@ export async function buildQannatiCertificateDocx(
     zip.file("word/media/qr.png", png);
     await ensureRel("rIdQr", "media/qr.png");
     await ensureType("png", "image/png");
+    const qrXml = s.qrPosition === "left"
+      ? QR_DRAWING.replace('w:tblpX="6600"', 'w:tblpX="2200"').replace('w:tblpY="-160"', 'w:tblpY="40"')
+      : QR_DRAWING;
     const besideNumbers = `<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="-9"/>`;
     xml = xml.includes(besideNumbers)
-      ? xml.replace(besideNumbers, `${QR_DRAWING}${besideNumbers}`)
-      : xml.replace("<w:sectPr", `${QR_DRAWING}<w:sectPr`);
+      ? xml.replace(besideNumbers, `${qrXml}${besideNumbers}`)
+      : xml.replace("<w:sectPr", `${qrXml}<w:sectPr`);
   }
   zip.file("word/document.xml", xml);
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });

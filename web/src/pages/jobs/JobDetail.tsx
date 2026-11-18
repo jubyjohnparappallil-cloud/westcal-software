@@ -7,10 +7,26 @@ import { PageLoading } from "../../components/PageLoading";
 import { Paged } from "../../components/Pagination";
 import { SignBox, TraineeEditor } from "../../components/TraineeEditor";
 import { TrainerSheet } from "../certificates/TrainerSheet";
-import { copyPublicLink, downloads } from "../../lib/downloads";
+import { copyPublicLink, downloads, type FieldFits } from "../../lib/downloads";
 import { isTrainingJob, jobCompanyNames, jobDateRange, formatClock, printedTrNo, sheetView, statusClass } from "../../lib/jobs";
 import type { Assignee } from "../../lib/roles";
 import type { Job } from "../../types";
+
+function jobFits(j: Job): FieldFits {
+  return {
+    name: j.nameFit === "shrink" ? "shrink" : "same",
+    company: j.companyFit === "shrink" ? "shrink" : "same",
+    course: j.courseFit === "shrink" ? "shrink" : "same",
+  };
+}
+
+function specialFits(j: Job): FieldFits {
+  return {
+    name: (j.specialNameFit ?? j.nameFit) === "shrink" ? "shrink" : "same",
+    company: (j.specialCompanyFit ?? j.companyFit) === "shrink" ? "shrink" : "same",
+    course: (j.specialCourseFit ?? j.courseFit) === "shrink" ? "shrink" : "same",
+  };
+}
 
 interface LineItem {
   sn: number;
@@ -434,26 +450,32 @@ export function JobDetail({
             <p key={c.id} style={{ margin: "8px 0", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <b>{c.certificateNo}</b>
               <span className="muted">{c.name}</span>
-              <button className="btn dark sm" onClick={() => downloads.certificate(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+              <button className="btn dark sm" onClick={() => downloads.certificate(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), jobFits(j))}>
                 Certificate
               </button>
               <button className="btn sec sm" onClick={() => downloads.card(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
                 ID card
               </button>
-              <button className="btn sec sm" onClick={() => downloads.cardClassic(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), j.companyFit === "shrink" ? "shrink" : "same")}>
-                Old ID card
+              <button className="btn sec sm" onClick={() => downloads.cardShrink(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+                ID card shrink
               </button>
-              <button className="btn sec sm" onClick={() => downloads.cardClassicPrevious(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), j.companyFit === "shrink" ? "shrink" : "same")}>
-                Previous ID card
+              <button className="btn sec sm" onClick={() => downloads.cardClassic(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+                Old ID card
               </button>
               <button className="btn sec sm" onClick={() => downloads.cardClassicShrink(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
                 Old card shrink
               </button>
-              <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), j.companyFit === "shrink" ? "shrink" : "same")}>
+              <button className="btn sec sm" onClick={() => downloads.cardClassicPrevious(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+                Previous ID card
+              </button>
+              <button className="btn sec sm" onClick={() => downloads.cardClassicPreviousShrink(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+                Previous card shrink
+              </button>
+              <button className="btn sec sm" onClick={() => downloads.certificateOld(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), jobFits(j))}>
                 Old design data
               </button>
               {perms.canIssueCerts() && (
-                <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""))}>
+                <button className="btn sec sm" onClick={() => downloads.certificateSpecial(j.id, c.id, String(c.certificateNo || "").replace(/'/g, ""), specialFits(j))}>
                   Special design
                 </button>
               )}

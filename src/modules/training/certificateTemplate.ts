@@ -214,25 +214,25 @@ export function certificateSlots(c: TrainingCertificate, job: TrainingJob) {
     design: "achievement",
     companyScale: clampCompanyScale(job.companyScale),
     companyFit: job.companyFit === "shrink" ? "shrink" : "same",
+    nameFit: job.nameFit === "shrink" ? "shrink" : "same",
+    courseFit: job.courseFit === "shrink" ? "shrink" : "same",
+    qrPosition: job.qrPosition === "left" ? "left" : "right",
   };
 }
 
 /** 1 keeps the automatic fit. Smaller values shrink a long employer name further. */
-function employerSize(text: string, scale: number, fit: string): string {
+function employerSize(text: string, _scale: number, fit: string): string {
   if (fit !== "shrink") return "1em";
   const len = text.trim().length;
-  const base = len > 52 ? 0.78 : len > 40 ? 0.88 : len > 28 ? 0.95 : 1;
-  return `${(base * clampCompanyScale(scale)).toFixed(2)}em`;
+  return len > 40 ? "0.9em" : "0.94em";
 }
 
 /** Shrink a long trainee name on the QR verify page. */
 function nameVerifySize(text: string, fit: string): string {
   if (fit !== "shrink") return "2.15cqi";
   const len = text.trim().length;
-  if (len > 52) return "1.35cqi";
-  if (len > 40) return "1.6cqi";
-  if (len > 28) return "1.85cqi";
-  return "2.15cqi";
+  if (len > 40) return "1.75cqi";
+  return "1.9cqi";
 }
 
 /** Break comma-joined titles so wrap/shrink can keep them clear of the photo. */
@@ -246,14 +246,12 @@ function courseDisplayText(raw: string): string {
     .trim();
 }
 
-/** Long course titles on the QR verify page shrink so they do not run into the photo. */
+/** Long course titles on the QR verify page: one medium size, not tiny exact-fit. */
 function courseVerifySize(text: string): string {
   const len = text.trim().length;
-  if (len > 100) return "1.05cqi";
-  if (len > 80) return "1.2cqi";
-  if (len > 55) return "1.4cqi";
-  if (len > 40) return "1.65cqi";
-  return "2cqi";
+  if (len > 80) return "1.7cqi";
+  if (len > 50) return "1.8cqi";
+  return "1.9cqi";
 }
 
 export function clampCompanyScale(value: unknown): number {
@@ -305,33 +303,42 @@ export function shrinkCompanyParagraph(xml: string, halfPoints: number): string 
   return shrinkTokenParagraph(xml, "COMPANY", halfPoints);
 }
 
-/** Shrink to a medium print size: long trainee name, company and course, not only one field. */
+/** Old/special Word templates are saved read-only; strip that so office staff can edit the download. */
+export function unlockWordBodyXml(xml: string): string {
+  return xml.replace(/<w:permStart\b[^>]*\/>/g, "").replace(/<w:permEnd\b[^>]*\/>/g, "");
+}
+
+export function unlockWordSettingsXml(xml: string): string {
+  return xml.replace(/<w:documentProtection\b[^>]*\/>/g, "");
+}
+
+/** One medium print size for name, company, or course — not a tiny exact-fit. */
 function mediumHalfPoints(text: string, base: number, fit: unknown): number {
   if (fit !== "shrink") return base;
   const len = String(text || "").trim().length;
-  if (len > 48) return Math.max(20, Math.round(base * 0.55));
-  if (len > 32) return Math.max(22, Math.round(base * 0.62));
-  if (len > 22) return Math.max(24, Math.round(base * 0.72));
-  return Math.max(26, Math.round(base * 0.82));
+  if (len > 70) return Math.max(30, Math.round(base * 0.76));
+  if (len > 45) return Math.max(32, Math.round(base * 0.82));
+  return Math.max(34, Math.round(base * 0.88));
 }
+
+export type CertificateFieldFits = { name?: unknown; company?: unknown; course?: unknown };
 
 export function shrinkCertificateTextParagraphs(
   xml: string,
   name: string,
   company: string,
   course: string,
-  fit: unknown,
+  fits: CertificateFieldFits,
   _scale: unknown,
   nameHalfPoints = 40,
   companyHalfPoints = 40,
   courseHalfPoints = 40,
 ): string {
-  let next = shrinkTokenParagraph(xml, "COMPANY", mediumHalfPoints(company, companyHalfPoints, fit));
-  if (fit !== "shrink") return next;
-  const nameSize = mediumHalfPoints(name, nameHalfPoints, fit);
+  let next = shrinkTokenParagraph(xml, "COMPANY", mediumHalfPoints(company, companyHalfPoints, fits.company));
+  const nameSize = mediumHalfPoints(name, nameHalfPoints, fits.name);
   next = shrinkTokenParagraph(next, "NAME", nameSize);
-  next = shrinkTokenParagraph(next, "EID", nameSize);
-  next = shrinkTokenParagraph(next, "COURSE", mediumHalfPoints(course, courseHalfPoints, fit));
+  if (fits.name === "shrink") next = shrinkTokenParagraph(next, "EID", nameSize);
+  next = shrinkTokenParagraph(next, "COURSE", mediumHalfPoints(course, courseHalfPoints, fits.course));
   return next;
 }
 
@@ -359,18 +366,13 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
     .text("This is to certify that", x, y, { width: w, align: "center" });
   y = doc.y + 8;
   const name = s.name.toUpperCase();
-  let nameSize = 16;
-  doc.font("Times-Bold").fillColor(navy);
-  if (s.companyFit === "shrink") {
-    nameSize = name.length > 32 ? 11 : 12;
-    while (nameSize > 8 && doc.fontSize(nameSize).widthOfString(name) > w) nameSize -= 0.3;
-  }
-  doc.font("Times-Bold").fontSize(nameSize)
+  const nameSize = s.nameFit === "shrink" ? 13 : 16;
+  doc.font("Times-Bold").fillColor(navy).fontSize(nameSize)
     .text(name, x, y, { width: w, align: "center" });
   y = doc.y + 4;
   if (s.eid) {
     const idNumber = s.idDocument === "passport" ? s.eid.toUpperCase() : s.eid;
-    const eidSize = s.companyFit === "shrink" ? nameSize : 11;
+    const eidSize = s.nameFit === "shrink" ? nameSize : 11;
     doc.fillColor("#111").font("Times-Bold").fontSize(eidSize)
       .text(`(${s.idDocument === "passport" ? "PASSPORT NO" : "EID NO"}: ${idNumber})`, x, y, { width: w, align: "center" });
     y = doc.y + 8;
@@ -379,26 +381,16 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
     .text("Employed by", x, y, { width: w, align: "center" });
   y = doc.y + 4;
   const company = s.company.toUpperCase();
-  let companySize = 13 * s.companyScale;
-  doc.font("Times-Bold").fillColor(navy);
-  if (s.companyFit === "shrink") {
-    companySize = company.length > 28 ? 11 : 12;
-    while (companySize > 8 && doc.fontSize(companySize).widthOfString(company) > w) companySize -= 0.3;
-  }
-  doc.font("Times-Bold").fontSize(companySize)
+  const companySize = s.companyFit === "shrink" ? 12 : 13 * s.companyScale;
+  doc.font("Times-Bold").fillColor(navy).fontSize(companySize)
     .text(company, x, y, { width: w, align: "center" });
   y = doc.y + 8;
   doc.fillColor("#333").font("Times-Italic").fontSize(11)
     .text("has successfully completed one day safety training for", x, y, { width: w, align: "center" });
   y = doc.y + 8;
   const course = s.course.toUpperCase();
-  let courseSize = course.length > 36 ? 12 : 14;
-  doc.font("Times-Bold").fillColor(navy);
-  if (s.companyFit === "shrink") {
-    courseSize = course.length > 36 ? 9 : 10.5;
-    while (courseSize > 7 && doc.fontSize(courseSize).widthOfString(course) > w) courseSize -= 0.3;
-  }
-  doc.font("Times-Bold").fontSize(courseSize)
+  const courseSize = s.courseFit === "shrink" ? 12 : course.length > 36 ? 12 : 14;
+  doc.font("Times-Bold").fillColor(navy).fontSize(courseSize)
     .text(course, x, y, { width: w, align: "center" });
   y = Math.min(doc.y + 16, qrY + 20);
   const metaRows = [
@@ -409,6 +401,7 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
   ];
   const metaW = 260;
   const metaX = (595.28 - metaW) / 2;
+  const metaY = y;
   metaRows.forEach(([label, value]) => {
     doc.font("Times-Roman").fontSize(11).fillColor("#111").text(label, metaX, y, { width: 120 });
     doc.text(value, metaX + 120, y, { width: 140 });
@@ -422,10 +415,11 @@ function drawCertificateBody(doc: PdfDoc, s: CertSlots, qrPng: Buffer | null, st
   }
   if (qrPng) {
     const qrSize = 72;
-    const qrX = 268;
-    doc.rect(qrX - 4, qrY - 4, qrSize + 8, qrSize + 16).fill("#ffffff");
-    doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
-    doc.font("Helvetica").fontSize(6).fillColor("#111").text("Scan to verify", qrX - 4, qrY + qrSize + 1, { width: qrSize + 8, align: "center" });
+    const qrX = s.qrPosition === "left" ? Math.max(36, metaX - qrSize - 18) : 268;
+    const placeY = s.qrPosition === "left" ? metaY : qrY;
+    doc.rect(qrX - 4, placeY - 4, qrSize + 8, qrSize + 16).fill("#ffffff");
+    doc.image(qrPng, qrX, placeY, { width: qrSize, height: qrSize });
+    doc.font("Helvetica").fontSize(6).fillColor("#111").text("Scan to verify", qrX - 4, placeY + qrSize + 1, { width: qrSize + 8, align: "center" });
   }
 }
 
@@ -483,15 +477,16 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 .auth-seal{position:absolute;left:39%;top:77.4%;width:13%;height:auto;object-fit:contain;z-index:3}
 .contact{position:absolute;left:9%;top:84.8%;width:24%;text-align:left;font-weight:700;font-size:11px;font-size:1.12cqi;line-height:1.15;color:#16325c}
 .qr{position:absolute;right:22%;top:75%;width:16%;background:#fff;padding:6px;box-sizing:border-box;z-index:4}
+.qr.qr-left{right:auto;left:4%;top:68.2%;width:11%}
 .qr img{width:100%;height:auto;display:block;background:#fff}
 </style></head><body>
 <div class="page"><div class="west-cert">
   ${photo}
   <img class="cert-marks" src="/certificate-marks.png?v=20261007m" alt="KHDA permit">
-  <div class="cert-name" style="font-size:${nameVerifySize(s.name, s.companyFit)}">${esc(s.name)}</div>
+  <div class="cert-name" style="font-size:${nameVerifySize(s.name, s.nameFit)}">${esc(s.name)}</div>
   <hr class="cert-rule">
   <div class="lead">has successfully completed one day safety training for</div>
-  <div class="cert-course" style="font-size:${courseVerifySize(courseDisplayText(s.course))}">${esc(courseDisplayText(s.course))}</div>
+  <div class="cert-course" style="font-size:${s.courseFit === "shrink" ? courseVerifySize(courseDisplayText(s.course)) : "2cqi"}">${esc(courseDisplayText(s.course))}</div>
   <div class="meta-col meta-left">
     <div><span>${s.idDocument === "passport" ? "Passport No" : "EID Number"}</span> ${esc(s.eid || "-")}</div>
     <div><span>Employed by</span> <b class="employer" style="font-size:${employerSize(company, s.companyScale, s.companyFit)}">${esc(company)}</b></div>
@@ -506,7 +501,7 @@ html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
   <img class="auth-sign" src="${certificateSignatureUrl(s.signatureChoice)}" alt="Authorized signature">
   <img class="auth-seal" src="/certificate-company-seal.png?v=20261017s" alt="Westcal seal">
   <div class="contact">Westcal Instrumentation and Calibration<br>Services LLC<br>Morocco Cluster, International City,<br>Dubai, UAE.<br>info@westcal.ae<br>+971566654326 &amp; +97145762773.<br>https://westcal.ae/</div>
-  ${ref ? `<div class="qr"><img src="/verify/${ref}/qr.png" alt="Scan to verify"></div>` : ""}
+  ${ref ? `<div class="qr${s.qrPosition === "left" ? " qr-left" : ""}"><img src="/verify/${ref}/qr.png" alt="Scan to verify"></div>` : ""}
 </div></div>
 </body></html>`;
 }
@@ -593,7 +588,17 @@ function drawPrintedCertificate(
     doc.text(text, x, y, { lineBreak: false });
   };
 
-  placeLine(s.name.toUpperCase(), py(568), "Times-Bold", 13, 7);
+  {
+    const name = s.name.toUpperCase();
+    const size = s.nameFit === "shrink" ? 11 : 13;
+    doc.font("Times-Bold").fillColor(navy);
+    if (doc.fontSize(size).widthOfString(name) <= textW) {
+      placeLine(name, py(568), "Times-Bold", size, size);
+    } else {
+      doc.font("Times-Bold").fontSize(size)
+        .text(name, textLeft, py(560), { width: textW, align: "center", lineGap: 0, height: size * 2.2 });
+    }
+  }
 
   const ruleW = px(120);
   const ruleX = textLeft + (textW - ruleW) / 2;
@@ -605,18 +610,12 @@ function drawPrintedCertificate(
   placeLine("has successfully completed one day safety training for", py(608), "Times-BoldItalic", 9, 6);
   {
     const course = courseDisplayText(s.course);
-    let size = 12;
-    const minSize = 6;
+    const size = s.courseFit === "shrink" ? 10.5 : 12;
     doc.font("Times-Bold").fillColor(navy);
-    while (size > minSize && doc.fontSize(size).widthOfString(course) > textW) size -= 0.25;
     if (doc.fontSize(size).widthOfString(course) <= textW) {
-      placeLine(course, py(646), "Times-Bold", size, minSize);
+      placeLine(course, py(646), "Times-Bold", size, size);
     } else {
-      size = Math.min(9.5, size);
-      while (size > minSize && doc.fontSize(size).heightOfString(course, { width: textW, align: "center" }) > size * 2.5) {
-        size -= 0.25;
-      }
-      doc.font("Times-Bold").fontSize(size).fillColor(navy)
+      doc.font("Times-Bold").fontSize(size)
         .text(course, textLeft, py(638), { width: textW, align: "center", lineGap: 1, height: size * 2.6 });
     }
   }
@@ -631,7 +630,6 @@ function drawPrintedCertificate(
     ["Employed by", s.company || "-", "Job No.", s.orderNo || s.jobNo],
     ["Training Date", formatCertDate(s.trainingDate), "Expiry Date", formatCertDate(s.expiresOn)],
   ];
-  const scale = s.companyScale;
   const linesAt = (text: string, size: number) => {
     doc.font("Times-Bold").fontSize(size);
     const words = String(text || "-").split(/\s+/).filter(Boolean);
@@ -649,10 +647,13 @@ function drawPrintedCertificate(
     }
     return lines;
   };
-  const valueSize = (text: string, scaled: boolean) => {
-    let size = 8 * (scaled ? scale : 1);
-    const floor = scaled ? Math.max(5, 6.5 * scale) : 6.5;
-    while (size > floor && linesAt(text, size) > 2) size -= 0.25;
+  const valueSize = (text: string, isCompany: boolean) => {
+    if (isCompany) {
+      const size = s.companyFit === "shrink" ? 7 : 8;
+      return { size, lines: Math.min(2, linesAt(text, size)) };
+    }
+    let size = 8;
+    while (size > 6.5 && linesAt(text, size) > 2) size -= 0.25;
     return { size, lines: Math.min(2, linesAt(text, size)) };
   };
   for (const [l1, v1, l2, v2] of meta) {
@@ -700,8 +701,8 @@ function drawPrintedCertificate(
 
   if (qrPng) {
     const qrSize = 78;
-    const qrX = px(470);
-    const qrY = py(768);
+    const qrX = px(s.qrPosition === "left" ? 70 : 470);
+    const qrY = py(s.qrPosition === "left" ? 708 : 768);
     doc.save();
     doc.rect(qrX - 8, qrY - 8, qrSize + 16, qrSize + 16).fill("#ffffff");
     doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
