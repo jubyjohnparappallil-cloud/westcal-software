@@ -442,11 +442,13 @@ function esc(value: unknown): string {
   ));
 }
 
-/** Old certificate. Shown when the ID card QR or the certificate QR is scanned. QR stays in the original place. */
+/** Same Certificate of Achievement as before. Scan page always keeps the QR on the right. */
 export function printedCertificateVerifyHtml(c: TrainingCertificate, job: TrainingJob): string {
   const s = certificateSlots(c, job);
   const company = s.company || "-";
-  const idLabel = s.idDocument === "passport" ? "PASSPORT NO" : "EID NO";
+  const photo = s.photoDataUrl
+    ? `<div class="cert-photo"><img src="${esc(s.photoDataUrl)}" alt=""></div>`
+    : "";
   const ref = c.verificationRef ? encodeURIComponent(c.verificationRef) : "";
   return `<!doctype html><html><head>
 <meta charset="utf-8">
@@ -456,38 +458,49 @@ export function printedCertificateVerifyHtml(c: TrainingCertificate, job: Traini
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#e8eef6;min-height:100%}
 .page{min-height:100dvh;display:flex;align-items:flex-start;justify-content:center;padding:8px 0}
-.west-cert{position:relative;width:min(720px,100vw);aspect-ratio:210/297;background:#fff url(/certificate-bg.png?v=20261118old) center/100% 100% no-repeat;overflow:hidden;text-align:center;font-family:"Times New Roman",Times,serif;color:#111;container-type:inline-size}
-.intro{position:absolute;left:12%;right:12%;top:32%;font-style:italic;font-size:13px;font-size:1.55cqi}
-.name{position:absolute;left:10%;right:10%;top:36.2%;font-weight:700;font-size:18px;font-size:2.2cqi;text-transform:uppercase;line-height:1.15}
-.eid{position:absolute;left:10%;right:10%;top:41.4%;font-size:13px;font-size:1.5cqi}
-.employed{position:absolute;left:10%;right:10%;top:44.6%;font-style:italic;font-size:13px;font-size:1.5cqi}
-.company{position:absolute;left:10%;right:10%;top:47.4%;font-weight:700;font-size:16px;font-size:1.95cqi;text-transform:uppercase;line-height:1.15}
-.lead{position:absolute;left:10%;right:10%;top:52.2%;font-style:italic;font-size:13px;font-size:1.5cqi}
-.course{position:absolute;left:10%;right:10%;top:55.4%;font-weight:700;font-size:15px;font-size:1.85cqi;text-transform:uppercase;line-height:1.2}
-.details{position:absolute;left:28%;width:42%;top:64%;text-align:left;font-size:13px;font-size:1.45cqi;line-height:1.7}
-.details b{display:inline-block;min-width:14cqi;font-weight:700}
-.qr{position:absolute;right:16%;top:62%;width:14%;background:#fff;padding:3px;box-sizing:border-box;z-index:4}
+.west-cert{position:relative;width:min(720px,100vw);aspect-ratio:210/297;background:#fff url(/certificate-achievement-blank-screen.jpg?v=20261009fast) center/100% 100% no-repeat;overflow:hidden;text-align:center;font-family:"Times New Roman",Times,serif;color:#16325c;container-type:inline-size}
+.cert-photo{position:absolute;right:15.5%;top:52.4%;width:11%;aspect-ratio:3/4;height:auto;overflow:hidden;border:2px solid #c9a227;background:#eee;z-index:2}
+.cert-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 22%;display:block}
+.cert-marks{position:absolute;left:36%;top:85.2%;width:24%;height:auto;object-fit:contain;z-index:2;pointer-events:none}
+.cert-name{position:absolute;left:8%;right:30%;top:54.6%;text-align:center;font-weight:700;font-size:16px;font-size:2.15cqi;text-transform:uppercase;white-space:nowrap;line-height:1;color:#16325c}
+.cert-rule{position:absolute;left:32%;width:18%;top:57.4%;border:0;border-top:1px solid #222;margin:0}
+.lead{position:absolute;left:10%;right:30%;top:58.4%;text-align:center;font-style:italic;font-weight:700;font-size:13px;font-size:1.45cqi;color:#16325c;white-space:nowrap}
+.cert-course{position:absolute;left:8%;right:30%;top:61.6%;max-height:6.2%;text-align:center;font-weight:700;font-size:15px;font-size:2cqi;text-transform:uppercase;color:#16325c;white-space:normal;line-height:1.12;overflow:hidden;padding:0 1%}
+.meta-col{position:absolute;top:68.2%;font-weight:700;font-size:13px;font-size:1.45cqi;color:#16325c;text-align:left;line-height:1.85}
+.meta-left{left:12%;width:40%}
+.meta-right{left:54%;width:26%}
+.meta-col div{overflow-wrap:anywhere}
+.meta-col span{display:inline-block;min-width:13.5cqi;vertical-align:top}
+.employer{font-size:0.92em;line-height:1.2}
+.auth{position:absolute;left:15%;top:77%;width:22%;text-align:left;font-weight:700;font-style:italic;letter-spacing:.8px;font-size:14px;font-size:1.6cqi}
+.auth-sign{position:absolute;left:14%;top:77.2%;width:24%;height:6.2%;object-fit:contain;object-position:left center;z-index:3;background:transparent;mix-blend-mode:multiply}
+.auth-seal{position:absolute;left:39%;top:77.4%;width:13%;height:auto;object-fit:contain;z-index:3}
+.contact{position:absolute;left:9%;top:84.8%;width:24%;text-align:left;font-weight:700;font-size:11px;font-size:1.12cqi;line-height:1.15;color:#16325c}
+.qr{position:absolute;right:22%;top:75%;width:16%;background:#fff;padding:6px;box-sizing:border-box;z-index:4}
 .qr img{width:100%;height:auto;display:block;background:#fff}
-.auth{position:absolute;left:14%;top:75%;width:28%;text-align:left;font-size:13px;font-size:1.45cqi}
-.auth-sign{position:absolute;left:22%;top:73.5%;width:22%;height:7%;object-fit:contain;object-position:left center;z-index:3;background:transparent;mix-blend-mode:multiply}
 </style></head><body>
 <div class="page"><div class="west-cert">
-  <div class="intro">This is to certify that</div>
-  <div class="name">${esc(s.name)}</div>
-  <div class="eid">(${idLabel}: ${esc(s.eid || "-")})</div>
-  <div class="employed">Employed by</div>
-  <div class="company">${esc(company)}</div>
+  ${photo}
+  <img class="cert-marks" src="/certificate-marks.png?v=20261007m" alt="KHDA permit">
+  <div class="cert-name">${esc(s.name)}</div>
+  <hr class="cert-rule">
   <div class="lead">has successfully completed one day safety training for</div>
-  <div class="course">${esc(courseDisplayText(s.course))}</div>
-  <div class="details">
-    <div><b>Certificate No.:</b> ${esc(s.certificateNo)}</div>
-    <div><b>Job No.:</b> ${esc(s.jobNo)}</div>
-    <div><b>Training Date:</b> ${esc(formatCertDate(s.trainingDate))}</div>
-    <div><b>Expiry Date:</b> ${esc(formatCertDate(s.expiresOn))}</div>
+  <div class="cert-course">${esc(courseDisplayText(s.course))}</div>
+  <div class="meta-col meta-left">
+    <div><span>${s.idDocument === "passport" ? "Passport No" : "EID Number"}</span> ${esc(s.eid || "-")}</div>
+    <div><span>Employed by</span> <b class="employer">${esc(company)}</b></div>
+    <div><span>Training Date</span> ${esc(formatCertDate(s.trainingDate))}</div>
+  </div>
+  <div class="meta-col meta-right">
+    <div><span>Certificate No.</span> ${esc(s.certificateNo)}</div>
+    <div><span>Job No.</span> ${esc(s.jobNo)}</div>
+    <div><span>Expiry Date</span> ${esc(formatCertDate(s.expiresOn))}</div>
   </div>
   ${ref ? `<div class="qr"><img src="/verify/${ref}/qr.png" alt="Scan to verify"></div>` : ""}
-  <div class="auth">Authorized By:</div>
+  <div class="auth">AUTHORISED BY</div>
   <img class="auth-sign" src="${certificateSignatureUrl(s.signatureChoice)}" alt="Authorized signature">
+  <img class="auth-seal" src="/certificate-company-seal.png?v=20261017s" alt="Westcal seal">
+  <div class="contact">Westcal Instrumentation and Calibration<br>Services LLC<br>Morocco Cluster, International City,<br>Dubai, UAE.<br>info@westcal.ae<br>+971566654326 &amp; +97145762773.<br>https://westcal.ae/</div>
 </div></div>
 </body></html>`;
 }
