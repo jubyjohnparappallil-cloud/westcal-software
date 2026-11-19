@@ -165,12 +165,22 @@ export async function buildQannatiCertificateDocx(
     zip.file("word/media/qr.png", png);
     await ensureRel("rIdQr", "media/qr.png");
     await ensureType("png", "image/png");
-    const qrXml = s.qrPosition === "left"
-      ? QR_DRAWING.replace('w:tblpX="6600"', 'w:tblpX="2200"').replace('w:tblpY="-160"', 'w:tblpY="40"')
-      : QR_DRAWING;
+    const left = s.qrPosition === "left";
+    // Same layout as old design: Certificate No. / Job No. stay centered.
+    // QR left sits to their left; QR right sits to their right.
+    const qrXml = QR_DRAWING.replace(
+      'w:tblpX="6600"',
+      left ? 'w:tblpX="2300"' : 'w:tblpX="9000"',
+    );
     const besideNumbers = `<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpY="-9"/>`;
+    const numbersXml = besideNumbers.replace(
+      'w:horzAnchor="margin" w:tblpY="-9"',
+      'w:horzAnchor="page" w:tblpX="4306" w:tblpY="-9"',
+    );
+    const valuesPr = `<w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="page" w:tblpX="3601" w:tblpY="-24"/>`;
+    xml = xml.replace(valuesPr, valuesPr.replace('w:tblpX="3601"', 'w:tblpX="6121"'));
     xml = xml.includes(besideNumbers)
-      ? xml.replace(besideNumbers, `${qrXml}${besideNumbers}`)
+      ? xml.replace(besideNumbers, `${qrXml}${numbersXml}`)
       : xml.replace("<w:sectPr", `${qrXml}<w:sectPr`);
   }
   zip.file("word/document.xml", xml);
